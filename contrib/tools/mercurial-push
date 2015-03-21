@@ -47,7 +47,7 @@ allow_merge:
 True/1 if merges are automatically approved, False/0 if not (default).
 
 To enable the hook, add the following line in the [hooks] section:
-pretxnchangegroup.rb = /path/to/hook/mercurial_push.py
+pretxnchangegroup.rb = /path/to/hook/mercurial-push
 """
 from rbtools.hooks.mercurial import *
 import logging
