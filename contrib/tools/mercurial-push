@@ -101,14 +101,14 @@ def push_review_hook_base(root, rbrepo, node):
             if approved_by_others(revreq):
                 approved_revreq.append(revreq)
                 logging.info("Approved review request found for {0}"
-                             .format(all_ctx[last_approved+1:i+1]))
+                             .format(all_ctx[last_approved + 1:i + 1]))
                 logging.info("URL: {0}".format(revreq.absolute_url))
                 last_approved = i
             else:
                 logging.info("Pending review request found.")
                 if revreq.approved:
                     logging.info("Review request has been approved by you, "
-                                 + "but must also be approved by someone else.")
+                        + "but must also be approved by someone else.")
                 # Add rest of commits to this review request
                 if i < len(all_ctx) - 1:
                     logging.info("Adding new commits to this review request.")
@@ -126,7 +126,7 @@ def push_review_hook_base(root, rbrepo, node):
             logging.error(str(error))
             return HOOK_FAILED
     approved = False
-    remaining_ctx = all_ctx[last_approved+1:]
+    remaining_ctx = all_ctx[last_approved + 1:]
     if len(remaining_ctx) == 0:
         approved = True
     else:

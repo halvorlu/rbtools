@@ -45,15 +45,14 @@ def update_and_publish(root, ticketurl, all_ctx, revreq, parent=None):
     if parent is None:
         parent = all_ctx[0] + "^1"
     differ = MercurialDiffer(root)
-    diff_info = differ.diff(all_ctx[0]+"^1",
+    diff_info = differ.diff(all_ctx[0] + "^1",
                             all_ctx[-1], parent)
     parent_diff = diff_info['parent_diff']
     diffs = revreq.get_diffs(only_links='upload_diff', only_fields='')
     if len(parent_diff) > 0:
         diffs.upload_diff(diff_info['diff'],
                           parent_diff=parent_diff,
-                          base_commit_id=
-                          diff_info['base_commit_id'])
+                          base_commit_id=diff_info['base_commit_id'])
     else:
         diffs.upload_diff(diff_info['diff'])
     description = unicode(generate_linked_description(all_ctx, ticketurl),
@@ -181,7 +180,7 @@ def list_of_incoming(node):
     """Return a list of all changeset hexes after (and including) node.
 
     Assumes that all incoming changeset have subsequent revision numbers."""
-    lines = extcmd(["hg", "log", "-r", node+":",
+    lines = extcmd(["hg", "log", "-r", node + ":",
                     "--template", "{node|short}\n"])
     return lines.split("\n")[:-1]
 
