@@ -240,8 +240,8 @@ def get_password():
     """Return password read from current user's password file."""
     pwdfile = password_filename()
     if not isfile(pwdfile):
-        raise LoginError("You should have your ReviewBoard password"
-                         + " in {0}".format(pwdfile))
+        logging.warning("Could not read the password file " + pwdfile)
+        return ""
     with open(pwdfile) as fileobj:
         password = fileobj.readline().rstrip('\n')
     return password
@@ -259,10 +259,10 @@ def get_repo(root, path):
     repos = root.get_repositories(path=path, only_fields='id',
                                   only_links='')
     if repos.num_items < 1:
-        raise LoginError("Could not open ReviewBoard repository for path"
-                         + "{0}".format(path)
+        raise LoginError("Could not open ReviewBoard repository for path\n"
+                         + "{0}\n".format(path)
                          + "Do you have the permissions to access this"
-                         + " repository? Ask admin ({0})"
+                         + " repository?\nAsk admin ({0})"
                          .format(admin_email(root))
                          + " to get permissions.")
     return repos[0].id

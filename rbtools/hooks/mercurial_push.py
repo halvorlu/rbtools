@@ -78,7 +78,7 @@ def get_ticket_url():
     ticket_url = config("reviewboardhook", "ticket_url", default="")
     if ticket_url == "":
         repo_root = extcmd(["hg", "root"]).strip()
-        logging.warning("WARNING: {0}/.hg/hgrc should specify"
+        logging.warning("{0}/.hg/hgrc should specify"
                         .format(repo_root))
         logging.warning("the URL to the bug tracker as the ")
         logging.warning("ticket_url setting in the [reviewboardhook] section.")
