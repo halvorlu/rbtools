@@ -2,6 +2,7 @@ from __future__ import print_function, unicode_literals
 
 import logging
 import subprocess
+import re
 
 from rbtools.api.client import RBClient
 from rbtools.api.errors import APIError, ServerInterfaceError
@@ -108,3 +109,41 @@ def get_review_request_approval(server_url, username, password,
     review_request = get_review_request(review_request_id, api_root)
 
     return review_request.approved, review_request.approval_failure
+
+
+TICKET_PREFIXES = ["close", "closed", "closes", "fix", "fixes", "fixed",
+                   "addresses", "re", "references", "refs", "see",
+                   "issue", "bug"]
+
+
+def linkify_ticket_refs(text, base_url):
+    """Return a text where all ticket references have been linkified."""
+
+    def replace_num_with_link(matchobj):
+        """Replace all numbers with links."""
+        substr = text[matchobj.start():matchobj.end()]
+        substr = re.sub(r"(#?(\d+))",
+                        r"[\1]({0}\2)".format(base_url), substr)
+        return substr
+
+    for prefix in TICKET_PREFIXES:
+        text = re.sub("(?P<prefix>" + prefix
+                      + r"\s*(?:ticket|bug)?:*\s*#?)(?P<id1>\d+)"
+                      + r"(?:\s*(?:,|and|, and)\s*#?(\d+))?"*10,
+                      replace_num_with_link, text,
+                      flags=re.IGNORECASE)
+    return text
+
+
+def find_ticket_refs(text):
+    """Find ticket references in given and text and return their numbers."""
+    nums = set()
+    for prefix in TICKET_PREFIXES:
+        matches = re.findall(prefix + r"\s*(?:ticket|bug)?:*\s*#?(\d+)"
+                             + r"(?:\s*(?:,|and|, and)\s*#?(\d+))?"*10, text,
+                             flags=re.IGNORECASE)
+        for match in matches:
+            for submatch in match:
+                if submatch != '':
+                    nums.add(int(submatch))
+    return sorted(list(nums))
