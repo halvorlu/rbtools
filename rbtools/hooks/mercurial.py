@@ -3,6 +3,7 @@ from rbtools.api.client import RBClient
 from rbtools.api.errors import AuthorizationError, APIError
 from rbtools.clients.mercurial import MercurialClient
 from rbtools.hooks.common import linkify_ticket_refs
+from rbtools.commands.post_auto import PostAuto
 from os.path import expanduser, isfile
 import logging
 import subprocess
@@ -38,10 +39,34 @@ def generate_linked_description(all_ctx, ticket_url):
     return text
 
 
-def update_and_publish(root, ticketurl, all_ctx, revreq, parent=None):
+def update_and_publish(root, ticketurl, all_ctx, revreqid=None, parent=None):
     """Update and publish given review request based on changesets.
 
     parent is the last commit known by the repository before the push."""
+    description = unicode(generate_linked_description(all_ctx, ticketurl),
+                          'utf-8')
+    summary = unicode(generate_summary(all_ctx), 'utf-8')
+    cmd = PostAuto()
+    if parent is None:
+        parent = all_ctx[0]
+    revs = parent + ":" + all_ctx[0] + ":" + all_ctx[-1]
+    try:
+        if revreqid is not None:
+            cmd.run_from_argv(["rbt", "post", "-r", str(revreqid), "-p",
+                               "--description", description, "--summary", summary,
+                               "--repository-type", "mercurial",
+                               revs])
+        else:
+            cmd.run_from_argv(["rbt", "post", "-p",
+                               "--description", description, "--summary", summary,
+                               "--repository-type", "mercurial",
+                               revs])
+
+    except subprocess.CalledProcessError as e:
+        print "error output:"
+        print e.output
+        raise
+    return
     if parent is None:
         parent = all_ctx[0] + "^1"
     differ = MercurialDiffer(root)
@@ -55,9 +80,6 @@ def update_and_publish(root, ticketurl, all_ctx, revreq, parent=None):
                           base_commit_id=diff_info['base_commit_id'])
     else:
         diffs.upload_diff(diff_info['diff'])
-    description = unicode(generate_linked_description(all_ctx, ticketurl),
-                          'utf-8')
-    summary = unicode(generate_summary(all_ctx), 'utf-8')
     commit_id = str(all_ctx[-1])
     draft = revreq.get_draft(only_links='update', only_fields='')
     draft = draft.update(
@@ -202,10 +224,12 @@ def find_review_request(root, rbrepo_id, commit_id):
                             + "{0} not found".format(commit_id))
 
 
-def get_root(url):
+def get_root(config):
     """Get API root object."""
     import getpass
     username = getpass.getuser()
+    password = get_password()
+    url = config['REVIEWBOARD_URL']
     try:
         password = get_password()
         client = RBClient(url, username=username, password=password)
