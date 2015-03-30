@@ -81,6 +81,7 @@ rb_commands = [
     'logout = rbtools.commands.logout:Logout',
     'patch = rbtools.commands.patch:Patch',
     'post = rbtools.commands.post:Post',
+    'post-auto = rbtools.commands.post_auto:PostAuto',
     'publish = rbtools.commands.publish:Publish',
     'setup-repo = rbtools.commands.setup_repo:SetupRepo',
     'stamp = rbtools.commands.stamp:Stamp',

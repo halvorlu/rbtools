@@ -112,8 +112,8 @@ def push_review_hook_base(root, rbrepo, node):
                 # Add rest of commits to this review request
                 if i < len(all_ctx) - 1:
                     logging.info("Adding new commits to this review request.")
-                    update_and_publish(root, ticket_url, all_ctx, revreq,
-                                       parent=parent)
+                    update_and_publish(root, ticket_url, all_ctx,
+                                       revreqid=revreq.id, parent=parent)
                 else:
                     logging.info("No new commits since last time.")
                 logging.warning("Cannot push until this review request"
@@ -147,13 +147,11 @@ def push_review_hook_base(root, rbrepo, node):
         review_requests = root.get_review_requests(only_fields='',
                                                    only_links='create')
         tip_id = remaining_ctx[-1]
-        revreq = review_requests.create(repository=rbrepo,
-                                        commit_id=tip_id)
-        update_and_publish(root, ticket_url, remaining_ctx, revreq,
+        update_and_publish(root, ticket_url, remaining_ctx,
                            parent=parent)
         logging.info("The review request must be completed before"
                      " you can push again.")
-        logging.info("URL: {0}".format(revreq.absolute_url))
+#        logging.info("URL: {0}".format(revreq.absolute_url))
         if last_approved > -1:
             logging.info("If you want to push the already approved changes,")
             logging.info("you can (probably) do this by executing")
