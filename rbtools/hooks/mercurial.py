@@ -14,43 +14,43 @@ HOOK_FAILED = True  # True means error (not equal to zero)
 HOOK_SUCCESS = False  # False means OK (equal to zero)
 
 
-def generate_summary(all_ctx):
+def generate_summary(changesets):
     """Generate a summary from a list of changeset ids."""
-    summary = extcmd(["hg", "log", "-r", all_ctx[0], "--template",
+    summary = extcmd(["hg", "log", "-r", changesets[0], "--template",
                       "{desc}"])
     return summary.split("\n")[0]
 
 
-def generate_description(all_ctx):
+def generate_description(changesets):
     """Generate a description from a list of changeset ids."""
-    header = "{0} changesets:\n".format(len(all_ctx))
-    maintext = extcmd(["hg", "log", "-r", all_ctx[0] + ":" + all_ctx[-1],
+    header = "{0} changesets:\n".format(len(changesets))
+    maintext = extcmd(["hg", "log", "-r", changesets[0] + ":" + changesets[-1],
                        "--template",
                        "{author} ({date|isodate}):\n{desc}\n\n"])
     return header + maintext
 
 
-def generate_linked_description(all_ctx, ticket_url):
+def generate_linked_description(changesets, ticket_url):
     """Generate a description from a list of changeset ids.
 
     References to tickets/bugs/issues are linkified with given base URL."""
-    text = generate_description(all_ctx)
+    text = generate_description(changesets)
     text = linkify_ticket_refs(text, ticket_url)
     return text
 
 
-def update_and_publish(root, ticketurl, all_ctx, revreq, parent=None):
+def update_and_publish(root, ticketurl, changesets, revreq, parent=None):
     """Update and publish given review request based on changesets.
 
     parent is the last commit known by the repository before the push."""
-    description = unicode(generate_linked_description(all_ctx, ticketurl),
+    description = unicode(generate_linked_description(changesets, ticketurl),
                           'utf-8')
-    summary = unicode(generate_summary(all_ctx), 'utf-8')
+    summary = unicode(generate_summary(changesets), 'utf-8')
     if parent is None:
-        parent = all_ctx[0] + "^1"
+        parent = changesets[0] + "^1"
     differ = MercurialDiffer(root)
-    diff_info = differ.diff(all_ctx[0] + "^1",
-                            all_ctx[-1], parent)
+    diff_info = differ.diff(changesets[0] + "^1",
+                            changesets[-1], parent)
     parent_diff = diff_info['parent_diff']
     diffs = revreq.get_diffs(only_links='upload_diff', only_fields='')
     if len(parent_diff) > 0:
@@ -59,7 +59,7 @@ def update_and_publish(root, ticketurl, all_ctx, revreq, parent=None):
                           base_commit_id=diff_info['base_commit_id'])
     else:
         diffs.upload_diff(diff_info['diff'])
-    commit_id = str(all_ctx[-1])
+    commit_id = str(changesets[-1])
     draft = revreq.get_draft(only_links='update', only_fields='')
     draft = draft.update(
         summary=summary,
@@ -119,7 +119,7 @@ class AlreadyExistsError(Exception):
     pass
 
 
-def config(section, name, default=None):
+def hg_config(section, name, default=None):
     """Return the Mercurial config value with given section and name."""
     try:
         result = extcmd(["hg", "showconfig", section + "." + name]).strip()
@@ -133,7 +133,7 @@ def config(section, name, default=None):
 
 def configbool(section, name, default=False):
     """Return the Mercurial config boolean value section.name."""
-    text = config(section, name, str(default))
+    text = hg_config(section, name, str(default))
     if text == "0" or text == "False":
         return False
     else:
@@ -188,7 +188,7 @@ def list_of_incoming(node):
 
 def find_review_request(root, rbrepo_id, commit_id):
     """Find a review request in the given repo with the given commit ID."""
-    fields = 'approved,id,absolute_url'
+    fields = 'approved,id,absolute_url,commit_id'
     links = 'submitter,reviews,update,diffs,draft'
 
     revreqs = root.get_review_requests(commit_id=commit_id,
@@ -201,6 +201,31 @@ def find_review_request(root, rbrepo_id, commit_id):
     else:
         raise NotFoundError("Review request with commit ID"
                             + "{0} not found".format(commit_id))
+
+
+def find_review_requests(root, rbrepoid, changesets):
+    """Return review requests that match changesets and changesets' indices."""
+    revreqs = []
+    indices = []
+    for i, changeset in enumerate(changesets):
+        try:
+            revreq = find_review_request(root, rbrepoid, changeset)
+            revreqs.append(revreq)
+            indices.append(i)
+        except NotFoundError:
+            pass
+    return revreqs, indices
+
+
+def find_last_approved(revreqs):
+    """Return index of last approved review request in the list, or -1."""
+    last_approved = -1
+    for i, revreq in enumerate(revreqs):
+        if approved_by_others(revreq):
+            logging.info("Approved review request found: {0}"
+                         .format(revreq.absolute_url))
+            last_approved = i
+    return last_approved
 
 
 def get_username(config):
