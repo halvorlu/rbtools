@@ -23,7 +23,7 @@ def generate_summary(all_ctx):
 
 def generate_description(all_ctx):
     """Generate a description from a list of changeset ids."""
-    header = "{0} changesets:".format(len(all_ctx))
+    header = "{0} changesets:\n".format(len(all_ctx))
     maintext = extcmd(["hg", "log", "-r", all_ctx[0] + ":" + all_ctx[-1],
                        "--template",
                        "{author} ({date|isodate}):\n{desc}\n\n"])
@@ -39,34 +39,13 @@ def generate_linked_description(all_ctx, ticket_url):
     return text
 
 
-def update_and_publish(root, ticketurl, all_ctx, revreqid=None, parent=None):
+def update_and_publish(root, ticketurl, all_ctx, revreq, parent=None):
     """Update and publish given review request based on changesets.
 
     parent is the last commit known by the repository before the push."""
     description = unicode(generate_linked_description(all_ctx, ticketurl),
                           'utf-8')
     summary = unicode(generate_summary(all_ctx), 'utf-8')
-    cmd = PostAuto()
-    if parent is None:
-        parent = all_ctx[0]
-    revs = parent + ":" + all_ctx[0] + ":" + all_ctx[-1]
-    try:
-        if revreqid is not None:
-            cmd.run_from_argv(["rbt", "post", "-r", str(revreqid), "-p",
-                               "--description", description, "--summary", summary,
-                               "--repository-type", "mercurial",
-                               revs])
-        else:
-            cmd.run_from_argv(["rbt", "post", "-p",
-                               "--description", description, "--summary", summary,
-                               "--repository-type", "mercurial",
-                               revs])
-
-    except subprocess.CalledProcessError as e:
-        print "error output:"
-        print e.output
-        raise
-    return
     if parent is None:
         parent = all_ctx[0] + "^1"
     differ = MercurialDiffer(root)
@@ -224,26 +203,57 @@ def find_review_request(root, rbrepo_id, commit_id):
                             + "{0} not found".format(commit_id))
 
 
+def get_username(config):
+    """Return username from config or guess at the current username."""
+    import getpass
+    if 'USERNAME' in config:
+        username = config['USERNAME']
+    else:
+        username = getpass.getuser()
+        logging.warning("You have not specified any username "
+                        + "in ~/.reviewboardrc")
+        logging.warning("Assuming '{0}' as username.".format(username))
+    return username
+
+
+def get_password_or_token(config):
+    """Read either password (preferred) or API token from config."""
+    if 'PASSWORD' in config:
+        return config['PASSWORD'], ""
+    elif 'API_TOKEN' in config:
+        return "", config['API_TOKEN']
+    else:
+        raise LoginError("You need to specify either a password or API token\n"
+                         + "for ReviewBoard in your .reviewboardrc file.")
+
+
 def get_root(config):
     """Get API root object."""
-    import getpass
-    username = getpass.getuser()
-    password = get_password()
-    url = config['REVIEWBOARD_URL']
+    username = get_username(config)
+    password, api_token = get_password_or_token(config)
+    if 'REVIEWBOARD_URL' in config:
+        url = config['REVIEWBOARD_URL']
+    else:
+        raise LoginError("You need to specify REVIEWBOARD_URL in the repo's"
+                         + " .reviewboardrc file.")
+    if 'ENABLE_PROXY' in config:
+        enable_proxy = config['ENABLE_PROXY']
+    else:
+        enable_proxy = True
     try:
-        password = get_password()
-        client = RBClient(url, username=username, password=password)
+        client = RBClient(url, username=username, password=password,
+                          api_token=api_token,
+                          disable_proxy=not enable_proxy)
         root = client.get_root()
     except AuthorizationError:
         register_url = url + "account/register/"
-        raise LoginError("Dear {0}, ".format(username)
-                         + "login to ReviewBoard failed. \n"
+        raise LoginError("Login to ReviewBoard failed. \n"
                          + "Please verify that you:\n"
                          + "1. Have a ReviewBoard user named " + username
                          + ".\n You can create a user by visiting\n"
                          + register_url + "\n"
-                         + "2. Have your ReviewBoard password in\n"
-                         + password_filename())
+                         + "2. Have either a password or API token in"
+                         + "~/.reviewboardrc or the repo's .reviewboardrc.")
     except APIError as api_error:
         if api_error.http_status == 404:
             raise LoginError("HTTP 404 error. Is the ReviewBoard URL\n"
@@ -251,23 +261,6 @@ def get_root(config):
         else:
             raise api_error
     return root
-
-
-def password_filename():
-    """Return the name of the user-specific ReviewBoard password file."""
-    home = expanduser("~")
-    return home + "/.reviewboardpassword"
-
-
-def get_password():
-    """Return password read from current user's password file."""
-    pwdfile = password_filename()
-    if not isfile(pwdfile):
-        logging.warning("Could not read the password file " + pwdfile)
-        return ""
-    with open(pwdfile) as fileobj:
-        password = fileobj.readline().rstrip('\n')
-    return password
 
 
 def admin_email(root):
