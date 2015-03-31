@@ -2,6 +2,7 @@
 
 from rbtools.utils.testbase import RBTestBase
 from rbtools.hooks.common import find_ticket_refs, linkify_ticket_refs
+from rbtools.hooks.mercurial import join_descriptions, DELIMITER
 
 
 class CommonTest(RBTestBase):
@@ -29,3 +30,11 @@ class CommonTest(RBTestBase):
                          linkify_ticket_refs("fixes #10", url))
         self.assertEqual("fixes [#10](a/10), [#11](a/11) and [#12](a/12)",
                          linkify_ticket_refs("fixes #10, #11 and #12", url))
+
+    def test_join_descriptions(self):
+        """Testing that description changes are kept when updating request."""
+        user_text = "blabla"
+        old = "1 changesets:\nblabla\n" + DELIMITER + user_text
+        new = "2 changesets:\nblabla\nfoobar\n"
+        joined = join_descriptions(old, new)
+        self.assertEqual(new + DELIMITER + user_text, joined)

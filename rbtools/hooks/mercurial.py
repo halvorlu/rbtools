@@ -12,6 +12,7 @@ import os
 
 HOOK_FAILED = True  # True means error (not equal to zero)
 HOOK_SUCCESS = False  # False means OK (equal to zero)
+DELIMITER = "\\(reviewboardhook will keep text below this line\\)\n"
 
 
 def generate_summary(changesets):
@@ -39,12 +40,31 @@ def generate_linked_description(changesets, ticket_url):
     return text
 
 
+def join_descriptions(old_description, new_description):
+    """Join two descriptions, keeping any changes after delimiter."""
+    delim_index = old_description.find(DELIMITER)
+    if delim_index == -1:
+        keep = DELIMITER
+    else:
+        keep = old_description[delim_index:]
+    return new_description + keep
+
+
+def update_description(changesets, ticket_url, old_description=""):
+    """Update description with new changesets, preserving any user changes.
+
+    References to tickets/bugs/issues are linkified."""
+    new_description = generate_linked_description(changesets, ticket_url)
+    return join_descriptions(old_description, new_description)
+
+
 def update_and_publish(root, ticketurl, changesets, revreq, parent=None):
     """Update and publish given review request based on changesets.
 
     parent is the last commit known by the repository before the push."""
-    description = unicode(generate_linked_description(changesets, ticketurl),
-                          'utf-8')
+    old_description = revreq.description.encode('utf-8')
+    description = unicode(update_description(changesets, ticketurl,
+                                             old_description), 'utf-8')
     summary = unicode(generate_summary(changesets), 'utf-8')
     if parent is None:
         parent = changesets[0] + "^1"
@@ -188,7 +208,7 @@ def list_of_incoming(node):
 
 def find_review_request(root, rbrepo_id, commit_id):
     """Find a review request in the given repo with the given commit ID."""
-    fields = 'approved,id,absolute_url,commit_id'
+    fields = 'approved,id,absolute_url,commit_id,description'
     links = 'submitter,reviews,update,diffs,draft'
 
     revreqs = root.get_review_requests(commit_id=commit_id,
