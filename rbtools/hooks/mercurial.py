@@ -3,8 +3,6 @@ from rbtools.api.client import RBClient
 from rbtools.api.errors import AuthorizationError, APIError
 from rbtools.clients.mercurial import MercurialClient
 from rbtools.hooks.common import linkify_ticket_refs
-from rbtools.commands.post_auto import PostAuto
-from os.path import expanduser, isfile
 import logging
 import subprocess
 import os
