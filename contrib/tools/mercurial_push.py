@@ -63,8 +63,9 @@ True/1 if merges should be approved automatically, False/0 if not (default).
 To enable the hook, add the following line in the [hooks] section:
 pretxnchangegroup.rb = /path/to/hook/mercurial_push.py
 """
-from rbtools.hooks.mercurial import *
+import rbtools.hooks.mercurial as hghook
 from rbtools.utils.filesystem import load_config
+from rbtools.api.errors import APIError
 import logging
 import getpass
 
@@ -72,18 +73,18 @@ import getpass
 def push_review_hook(node):
     """Run the hook. node is the hex of the first changeset."""
     config = load_config()
-    repo_root = extcmd(["hg", "root"]).strip()
+    repo_root = hghook.extcmd(["hg", "root"]).strip()
     try:
-        root = get_root(config)
-        rbrepo = get_repo(root, repo_root)
-    except LoginError as error:
+        root = hghook.get_root(config)
+        rbrepo = hghook.get_repo(root, repo_root)
+    except hghook.LoginError as error:
         for line in str(error).split('\n'):
             logging.error(line)
-        return HOOK_FAILED
+        return hghook.HOOK_FAILED
     if 'REVIEWBOARD_URL' not in config:
-        logging.error("You need to specify REVIEWBOARD_URL in the repo's"
-                      + " .reviewboardrc file.")
-        return HOOK_FAILED
+        logging.error("You need to specify REVIEWBOARD_URL in the repo's" +
+                      " .reviewboardrc file.")
+        return hghook.HOOK_FAILED
     else:
         url = config['REVIEWBOARD_URL']
     return push_review_hook_base(root, rbrepo, node, url,
@@ -92,9 +93,10 @@ def push_review_hook(node):
 
 def get_ticket_url():
     """Return URL root to issue tracker. Warn if not specified in hgrc."""
-    ticket_url = hg_config("reviewboardhook", "ticket_url", default="")
+    ticket_url = hghook.hg_config("reviewboardhook", "ticket_url",
+                                  default="")
     if ticket_url == "":
-        repo_root = extcmd(["hg", "root"]).strip()
+        repo_root = hghook.extcmd(["hg", "root"]).strip()
         logging.warning("{0}/.hg/hgrc should specify"
                         .format(repo_root))
         logging.warning("the URL to the bug tracker as the ")
@@ -110,11 +112,11 @@ def push_review_hook_base(root, rbrepo, node, url, submitter):
     url is the ReviewBoard server URL.
     submitter is the user name of the user that is submitting."""
     ticket_url = get_ticket_url()
-    changesets = list_of_incoming(node)
+    changesets = hghook.list_of_incoming(node)
     parent = node + "^1"
     logging.info("{0} changesets received.".format(len(changesets)))
-    revreqs, indices = find_review_requests(root, rbrepo, changesets)
-    last_approved_revreq = find_last_approved(revreqs)
+    revreqs, indices = hghook.find_review_requests(root, rbrepo, changesets)
+    last_approved_revreq = hghook.find_last_approved(revreqs)
     if last_approved_revreq == -1:
         last_approved = -1
     else:
@@ -123,8 +125,8 @@ def push_review_hook_base(root, rbrepo, node, url, submitter):
     if is_approved(not_approved):
         for revreq in revreqs:
             logging.info("Closing review request: " + revreq.absolute_url)
-            close_request(revreq)
-        return HOOK_SUCCESS
+            hghook.close_request(revreq)
+        return hghook.HOOK_SUCCESS
     else:
         if last_approved_revreq != len(revreqs) - 1:
             logging.info("Pending review request found.")
@@ -133,14 +135,14 @@ def push_review_hook_base(root, rbrepo, node, url, submitter):
         else:
             logging.info("Creating review request for new changesets.")
             revreq = create(root, rbrepo, submitter, url, not_approved[-1])
-            update_and_publish(root, ticket_url, not_approved,
-                               revreq, parent=parent)
+            hghook.update_and_publish(root, ticket_url, not_approved,
+                                      revreq, parent=parent)
         if last_approved > -1:
             logging.info("If you want to push the already approved changes,")
             logging.info("you can (probably) do this by executing")
             logging.info("'hg push -r {0}'"
                          .format(changesets[last_approved]))
-        return HOOK_FAILED
+        return hghook.HOOK_FAILED
 
 
 def is_approved(changesets):
@@ -151,11 +153,11 @@ def is_approved(changesets):
     if len(changesets) == 0:
         return True
     else:
-        allow_merge = configbool("reviewboardhook", "allow_merge",
-                                 default=False)
-        if allow_merge and all([is_merge(ctx) for ctx in changesets]):
-            logging.info("New commits are merges, "
-                         + "which are automatically approved")
+        allow_merge = hghook.configbool("reviewboardhook", "allow_merge",
+                                        default=False)
+        if allow_merge and all([hghook.is_merge(ctx) for ctx in changesets]):
+            logging.info("New commits are merges, " +
+                         "which are automatically approved")
             return True
     return False
 
@@ -163,16 +165,16 @@ def is_approved(changesets):
 def add_to_pending(revreq, root, ticket_url, changesets, parent):
     """Add any new changesets to pending review request."""
     if revreq.approved:
-        logging.info("Review request has been approved by you, but"
-                     + " must also be approved by someone else.")
+        logging.info("Review request has been approved by you, but" +
+                     " must also be approved by someone else.")
     if revreq.commit_id != changesets[-1]:
         logging.info("Adding new commits to this review request.")
-        update_and_publish(root, ticket_url, changesets,
-                           revreq, parent=parent)
+        hghook.update_and_publish(root, ticket_url, changesets,
+                                  revreq, parent=parent)
     else:
         logging.info("No new commits since last time.")
-    logging.warning("Cannot push until this review request"
-                    + " is completed.")
+    logging.warning("Cannot push until this review request" +
+                    " is completed.")
     logging.warning("URL: {0}".format(revreq.absolute_url))
 
 
@@ -188,8 +190,8 @@ def create(root, rbrepoid, submitter, url, commit_id):
         if api_error.error_code == 208:
             register_url = url + "account/register/"
             logging.error("Could not create review request.")
-            logging.error("Make sure you have created a user named '"
-                          + submitter + "'.")
+            logging.error("Make sure you have created a user named '" +
+                          submitter + "'.")
             logging.error("Go to " + register_url + " to create a user.")
         raise api_error
     logging.info("The review request must be completed before"
@@ -200,6 +202,7 @@ def create(root, rbrepoid, submitter, url, commit_id):
 
 if __name__ == "__main__":
     import sys
+    import os
     logging.basicConfig(format='%(levelname)s: %(message)s',
                         level=logging.INFO)
     sys.exit(push_review_hook(node=os.environ['HG_NODE']))

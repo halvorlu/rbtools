@@ -21,7 +21,8 @@ class CommonTest(RBTestBase):
         self.assertEqual([2, 10, 11],
                          find_ticket_refs("see issue: 10,11,2"))
         self.assertEqual([1, 2, 3, 4, 5],
-            find_ticket_refs("fixes 1, 2, 3. Addresses 3, 4, 5."))
+                         find_ticket_refs("fixes 1, 2, 3. " +
+                                          "Addresses 3, 4, 5."))
 
     def test_linkify_refs(self):
         """Testing that references to tickets are linkified."""

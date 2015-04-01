@@ -217,8 +217,8 @@ def find_review_request(root, rbrepo_id, commit_id):
     if len(revreqs) > 0:
         return revreqs[0]
     else:
-        raise NotFoundError("Review request with commit ID"
-                            + "{0} not found".format(commit_id))
+        raise NotFoundError("Review request with commit ID" +
+                            "{0} not found".format(commit_id))
 
 
 def find_review_requests(root, rbrepoid, changesets):
@@ -253,8 +253,8 @@ def get_username(config):
         username = config['USERNAME']
     else:
         username = getpass.getuser()
-        logging.warning("You have not specified any username "
-                        + "in ~/.reviewboardrc")
+        logging.warning("You have not specified any username " +
+                        "in ~/.reviewboardrc")
         logging.warning("Assuming '{0}' as username.".format(username))
     return username
 
@@ -266,8 +266,9 @@ def get_password_or_token(config):
     elif 'API_TOKEN' in config:
         return "", config['API_TOKEN']
     else:
-        raise LoginError("You need to specify either a password or API token\n"
-                         + "for ReviewBoard in your .reviewboardrc file.")
+        raise LoginError("You need to specify either a password " +
+                         "or API token\n" +
+                         "for ReviewBoard in your .reviewboardrc file.")
 
 
 def get_root(config):
@@ -277,8 +278,8 @@ def get_root(config):
     if 'REVIEWBOARD_URL' in config:
         url = config['REVIEWBOARD_URL']
     else:
-        raise LoginError("You need to specify REVIEWBOARD_URL in the repo's"
-                         + " .reviewboardrc file.")
+        raise LoginError("You need to specify REVIEWBOARD_URL in the repo's" +
+                         " .reviewboardrc file.")
     if 'ENABLE_PROXY' in config:
         enable_proxy = config['ENABLE_PROXY']
     else:
@@ -290,17 +291,17 @@ def get_root(config):
         root = client.get_root()
     except AuthorizationError:
         register_url = url + "account/register/"
-        raise LoginError("Login to ReviewBoard failed. \n"
-                         + "Please verify that you:\n"
-                         + "1. Have a ReviewBoard user named " + username
-                         + ".\n You can create a user by visiting\n"
-                         + register_url + "\n"
-                         + "2. Have either a password or API token in"
-                         + "~/.reviewboardrc or the repo's .reviewboardrc.")
+        raise LoginError("Login to ReviewBoard failed. \n" +
+                         "Please verify that you:\n" +
+                         "1. Have a ReviewBoard user named " + username +
+                         ".\n You can create a user by visiting\n" +
+                         register_url + "\n" +
+                         "2. Have either a password or API token in" +
+                         "~/.reviewboardrc or the repo's .reviewboardrc.")
     except APIError as api_error:
         if api_error.http_status == 404:
-            raise LoginError("HTTP 404 error. Is the ReviewBoard URL\n"
-                             + "{0} correct?".format(url))
+            raise LoginError("HTTP 404 error. Is the ReviewBoard URL\n" +
+                             "{0} correct?".format(url))
         else:
             raise api_error
     return root
@@ -318,10 +319,10 @@ def get_repo(root, path):
     repos = root.get_repositories(path=path, only_fields='id',
                                   only_links='')
     if repos.num_items < 1:
-        raise LoginError("Could not open ReviewBoard repository for path\n"
-                         + "{0}\n".format(path)
-                         + "Do you have the permissions to access this"
-                         + " repository?\nAsk admin ({0})"
-                         .format(admin_email(root))
-                         + " to get permissions.")
+        raise LoginError("Could not open ReviewBoard repository for path\n" +
+                         "{0}\n".format(path) +
+                         "Do you have the permissions to access this" +
+                         " repository?\nAsk admin ({0})"
+                         .format(admin_email(root)) +
+                         " to get permissions.")
     return repos[0].id

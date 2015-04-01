@@ -127,9 +127,9 @@ def linkify_ticket_refs(text, base_url):
         return substr
 
     for prefix in TICKET_PREFIXES:
-        text = re.sub("(?P<prefix>" + prefix
-                      + r"\s*(?:ticket|bug)?:*\s*#?)(?P<id1>\d+)"
-                      + r"(?:\s*(?:,|and|, and)\s*#?(\d+))?"*10,
+        text = re.sub("(?P<prefix>" + prefix +
+                      r"\s*(?:ticket|bug)?:*\s*#?)(?P<id1>\d+)" +
+                      r"(?:\s*(?:,|and|, and)\s*#?(\d+))?"*10,
                       replace_num_with_link, text,
                       flags=re.IGNORECASE)
     return text
@@ -139,8 +139,8 @@ def find_ticket_refs(text):
     """Find ticket references in given and text and return their numbers."""
     nums = set()
     for prefix in TICKET_PREFIXES:
-        matches = re.findall(prefix + r"\s*(?:ticket|bug)?:*\s*#?(\d+)"
-                             + r"(?:\s*(?:,|and|, and)\s*#?(\d+))?"*10, text,
+        matches = re.findall(prefix + r"\s*(?:ticket|bug)?:*\s*#?(\d+)" +
+                             r"(?:\s*(?:,|and|, and)\s*#?(\d+))?"*10, text,
                              flags=re.IGNORECASE)
         for match in matches:
             for submatch in match:
