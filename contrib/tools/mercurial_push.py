@@ -63,11 +63,16 @@ True/1 if merges should be approved automatically, False/0 if not (default).
 To enable the hook, add the following line in the [hooks] section:
 pretxnchangegroup.rb = /path/to/hook/mercurial_push.py
 """
+from __future__ import unicode_literals
+
 import rbtools.hooks.mercurial as hghook
 from rbtools.utils.filesystem import load_config
 from rbtools.api.errors import APIError
 import logging
 import getpass
+
+
+CONFIG_SECTION = "reviewboardhook"
 
 
 def push_review_hook(node):
@@ -93,17 +98,30 @@ def push_review_hook(node):
 
 def get_ticket_url():
     """Return URL root to issue tracker. Warn if not specified in hgrc."""
-    ticket_url = hghook.hg_config("reviewboardhook", "ticket_url",
+    ticket_url = hghook.hg_config(CONFIG_SECTION, "ticket_url",
                                   default="")
     if ticket_url == "":
         repo_root = hghook.extcmd(["hg", "root"]).strip()
         logging.warning("{0}/.hg/hgrc should specify"
                         .format(repo_root))
         logging.warning("the URL to the bug tracker as the ")
-        logging.warning("ticket_url setting in the [reviewboardhook] section.")
+        logging.warning("ticket_url setting in the [" +
+                        CONFIG_SECTION + "] section.")
         logging.warning("Links to tickets/bugs in the review request summary")
         logging.warning("or description may not work.")
     return ticket_url
+
+
+def get_ticket_prefixes():
+    """Return a list of allowed prefixes in ticket IDs."""
+    prefixes = hghook.hg_config(CONFIG_SECTION, "ticket_id_prefixes",
+                                default=None)
+    if prefixes is None:
+        return [""]
+    else:
+        prefixes = [x.strip() for x in prefixes.split(",")]
+        prefixes.append("")
+        return prefixes
 
 
 def push_review_hook_base(root, rbrepo, node, url, submitter):
@@ -112,6 +130,7 @@ def push_review_hook_base(root, rbrepo, node, url, submitter):
     url is the ReviewBoard server URL.
     submitter is the user name of the user that is submitting."""
     ticket_url = get_ticket_url()
+    ticket_prefixes = get_ticket_prefixes()
     changesets = hghook.list_of_incoming(node)
     parent = node + "^1"
     logging.info("{0} changesets received.".format(len(changesets)))
@@ -131,12 +150,13 @@ def push_review_hook_base(root, rbrepo, node, url, submitter):
         if last_approved_revreq != len(revreqs) - 1:
             logging.info("Pending review request found.")
             revreq = revreqs[-1]
-            add_to_pending(revreq, root, ticket_url, not_approved, parent)
+            add_to_pending(revreq, root, ticket_url, ticket_prefixes,
+                           not_approved, parent)
         else:
             logging.info("Creating review request for new changesets.")
             revreq = create(root, rbrepo, submitter, url, not_approved[-1])
-            hghook.update_and_publish(root, ticket_url, not_approved,
-                                      revreq, parent=parent)
+            hghook.update_and_publish(root, ticket_url, ticket_prefixes,
+                                      not_approved, revreq, parent=parent)
         if last_approved > -1:
             logging.info("If you want to push the already approved changes,")
             logging.info("you can (probably) do this by executing")
@@ -162,15 +182,16 @@ def is_approved(changesets):
     return False
 
 
-def add_to_pending(revreq, root, ticket_url, changesets, parent):
+def add_to_pending(revreq, root, ticket_url, ticket_prefixes,
+                   changesets, parent):
     """Add any new changesets to pending review request."""
     if revreq.approved:
         logging.info("Review request has been approved by you, but" +
                      " must also be approved by someone else.")
     if revreq.commit_id != changesets[-1]:
         logging.info("Adding new commits to this review request.")
-        hghook.update_and_publish(root, ticket_url, changesets,
-                                  revreq, parent=parent)
+        hghook.update_and_publish(root, ticket_url, ticket_prefixes,
+                                  changesets, revreq, parent=parent)
     else:
         logging.info("No new commits since last time.")
     logging.warning("Cannot push until this review request" +

@@ -1,8 +1,10 @@
 """Generic functions for Mercurial hooks."""
+from __future__ import unicode_literals
+
 from rbtools.api.client import RBClient
 from rbtools.api.errors import AuthorizationError, APIError
 from rbtools.clients.mercurial import MercurialClient
-from rbtools.hooks.common import linkify_ticket_refs
+from rbtools.hooks.common import linkify_ticket_refs, find_ticket_refs
 import logging
 import subprocess
 import os
@@ -17,7 +19,7 @@ def generate_summary(changesets):
     """Generate a summary from a list of changeset ids."""
     summary = extcmd(["hg", "log", "-r", changesets[0], "--template",
                       "{desc}"])
-    return summary.split("\n")[0]
+    return summary.decode('utf-8').split("\n")[0]
 
 
 def generate_description(changesets):
@@ -26,16 +28,7 @@ def generate_description(changesets):
     maintext = extcmd(["hg", "log", "-r", changesets[0] + ":" + changesets[-1],
                        "--template",
                        "{author} ({date|isodate}):\n{desc}\n\n"])
-    return header + maintext
-
-
-def generate_linked_description(changesets, ticket_url):
-    """Generate a description from a list of changeset ids.
-
-    References to tickets/bugs/issues are linkified with given base URL."""
-    text = generate_description(changesets)
-    text = linkify_ticket_refs(text, ticket_url)
-    return text
+    return header + maintext.decode('utf-8')
 
 
 def join_descriptions(old_description, new_description):
@@ -48,24 +41,8 @@ def join_descriptions(old_description, new_description):
     return new_description + keep
 
 
-def update_description(changesets, ticket_url, old_description=""):
-    """Update description with new changesets, preserving any user changes.
-
-    References to tickets/bugs/issues are linkified."""
-    new_description = generate_linked_description(changesets, ticket_url)
-    return join_descriptions(old_description, new_description)
-
-
-def update_and_publish(root, ticketurl, changesets, revreq, parent=None):
-    """Update and publish given review request based on changesets.
-
-    parent is the last commit known by the repository before the push."""
-    old_description = revreq.description.encode('utf-8')
-    description = unicode(update_description(changesets, ticketurl,
-                                             old_description), 'utf-8')
-    summary = unicode(generate_summary(changesets), 'utf-8')
-    if parent is None:
-        parent = changesets[0] + "^1"
+def upload_diff(root, changesets, revreq, parent):
+    """Upload a diff for the given changesets to given review request."""
     differ = MercurialDiffer(root)
     diff_info = differ.diff(changesets[0] + "^1",
                             changesets[-1], parent)
@@ -77,10 +54,29 @@ def update_and_publish(root, ticketurl, changesets, revreq, parent=None):
                           base_commit_id=diff_info['base_commit_id'])
     else:
         diffs.upload_diff(diff_info['diff'])
+
+
+def update_and_publish(root, ticketurl, ticket_prefixes,
+                       changesets, revreq, parent=None):
+    """Update and publish given review request based on changesets.
+
+    parent is the last commit known by the repository before the push."""
+    old_description = revreq.description
+    new_plain_description = generate_description(changesets)
+    linked_description = linkify_ticket_refs(new_plain_description,
+                                             ticketurl, ticket_prefixes)
+    description = join_descriptions(old_description, linked_description)
+    summary = generate_summary(changesets)
+    if parent is None:
+        parent = changesets[0] + "^1"
+    upload_diff(root, changesets, revreq, parent)
+    string_refs = [str(x) for x in find_ticket_refs(new_plain_description)]
+    bugs_closed = ",".join(string_refs)
     commit_id = str(changesets[-1])
     draft = revreq.get_draft(only_links='update', only_fields='')
     draft = draft.update(
         summary=summary,
+        bugs_closed=bugs_closed,
         description=description,
         description_text_type='markdown',
         commit_id=commit_id,
@@ -261,10 +257,10 @@ def get_username(config):
 
 def get_password_or_token(config):
     """Read either password (preferred) or API token from config."""
-    if 'PASSWORD' in config:
-        return config['PASSWORD'], ""
-    elif 'API_TOKEN' in config:
-        return "", config['API_TOKEN']
+    if 'API_TOKEN' in config:
+        return None, config['API_TOKEN']
+    elif 'PASSWORD' in config:
+        return config['PASSWORD'], None
     else:
         raise LoginError("You need to specify either a password " +
                          "or API token\n" +
@@ -294,9 +290,9 @@ def get_root(config):
         raise LoginError("Login to ReviewBoard failed. \n" +
                          "Please verify that you:\n" +
                          "1. Have a ReviewBoard user named " + username +
-                         ".\n You can create a user by visiting\n" +
+                         ".\nYou can create a user by visiting\n" +
                          register_url + "\n" +
-                         "2. Have either a password or API token in" +
+                         "2. Have either a password or API token in " +
                          "~/.reviewboardrc or the repo's .reviewboardrc.")
     except APIError as api_error:
         if api_error.http_status == 404:
