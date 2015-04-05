@@ -32,6 +32,10 @@ class CommonTest(RBTestBase):
         self.assertEqual("fixes [#10](a/10), [#11](a/11) and [#12](a/12)",
                          linkify_ticket_refs("fixes #10, #11 and #12", url))
 
+
+class MercurialTest(RBTestBase):
+    """Tests for rbtools.hooks.mercurial."""
+
     def test_join_descriptions(self):
         """Testing that description changes are kept when updating request."""
         user_text = "blabla"
