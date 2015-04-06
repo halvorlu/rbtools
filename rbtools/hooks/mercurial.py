@@ -8,6 +8,8 @@ from rbtools.hooks.common import linkify_ticket_refs, find_ticket_refs
 import logging
 import subprocess
 import os
+import hashlib
+from datetime import datetime
 
 
 HOOK_FAILED = True  # True means error (not equal to zero)
@@ -56,7 +58,14 @@ def upload_diff(root, changesets, revreq, parent):
         diffs.upload_diff(diff_info['diff'])
 
 
-def update_and_publish(root, ticketurl, ticket_prefixes,
+def date_author_hash(changeset):
+    """Return a MD5 hash (base64) of the author/date of given changeset."""
+    text = extcmd(["hg", "log", "-r", changeset,
+                   "--template", "{author} {date}"])
+    return hashlib.md5(text).hexdigest()
+
+
+def update_and_publish(root, ticket_url, ticket_prefixes,
                        changesets, revreq, parent=None):
     """Update and publish given review request based on changesets.
 
@@ -64,7 +73,7 @@ def update_and_publish(root, ticketurl, ticket_prefixes,
     old_description = revreq.description
     new_plain_description = generate_description(changesets)
     linked_description = linkify_ticket_refs(new_plain_description,
-                                             ticketurl, ticket_prefixes)
+                                             ticket_url, ticket_prefixes)
     description = join_descriptions(old_description, linked_description)
     summary = generate_summary(changesets)
     if parent is None:
@@ -72,7 +81,9 @@ def update_and_publish(root, ticketurl, ticket_prefixes,
     upload_diff(root, changesets, revreq, parent)
     string_refs = [str(x) for x in find_ticket_refs(new_plain_description)]
     bugs_closed = ",".join(string_refs)
-    commit_id = str(changesets[-1])
+    commit_id = date_author_hash(changesets[-1])
+    extra_data = {'extra_data.real_commit_id': changesets[-1]}
+    revreq.update(**extra_data)
     draft = revreq.get_draft(only_links='update', only_fields='')
     draft = draft.update(
         summary=summary,
@@ -167,22 +178,41 @@ def close_request(rev_req):
                    close_description=message)
 
 
+def datetime_from_timestamp(timestamp):
+    """Return a datetime object from a ReviewBoard timestamp."""
+    timestamp_format = "%Y-%m-%dT%H:%M:%SZ"
+    return datetime.strptime(timestamp, timestamp_format)
+
+
+def get_last_diff_time(revreq):
+    """Return datetime object of last diff upload to given review request."""
+    diffs = revreq.get_diffs(only_fields='timestamp')
+    datetimes = [datetime_from_timestamp(diff.timestamp) for diff in diffs]
+    return max(datetimes)
+
+
 def approved_by_others(revreq):
-    """Return True if the review request was approved by someone else."""
+    """Return True if the review request was approved by someone else.
+
+    The approval must have been given after the last diff update."""
     if not revreq.approved:
         return False
+    diff_date = get_last_diff_time(revreq)
     revreq_user_id = revreq.get_submitter(only_fields='id', only_links='').id
-    reviews = revreq.get_reviews(only_fields='ship_it',
+    reviews = revreq.get_reviews(only_fields='ship_it,timestamp',
                                  only_links='user')
     for review in reviews:
         review_user = review.get_user(only_fields='id,username',
                                       only_links='')
         user_id = review_user.id
         if review.ship_it:
-            logging.debug("Review request {0} has been approved by {1}"
-                          .format(revreq.id, review_user.username))
-        if review.ship_it and user_id != revreq_user_id:
-            return True
+            logging.info("Review request {0} has been approved by {1}"
+                         .format(revreq.id, review_user.username))
+            review_time = datetime_from_timestamp(review.timestamp)
+            if review_time < diff_date:
+                logging.info("... but the diff has been updated since then.")
+            elif user_id != revreq_user_id:
+                return True
     return False
 
 
@@ -200,10 +230,12 @@ def list_of_incoming(node):
     return lines.split("\n")[:-1]
 
 
-def find_review_request(root, rbrepo_id, commit_id):
-    """Find a review request in the given repo with the given commit ID."""
-    fields = 'approved,id,absolute_url,commit_id,description'
+def find_review_request(root, rbrepo_id, changeset):
+    """Find a review request in the given repo for the given changeset."""
+    fields = 'approved,id,absolute_url,commit_id,description,extra_data'
     links = 'submitter,reviews,update,diffs,draft'
+
+    commit_id = date_author_hash(changeset)
 
     revreqs = root.get_review_requests(commit_id=commit_id,
                                        repository=rbrepo_id,
@@ -218,17 +250,28 @@ def find_review_request(root, rbrepo_id, commit_id):
 
 
 def find_review_requests(root, rbrepoid, changesets):
-    """Return review requests that match changesets and changesets' indices."""
+    """Return rev. requests that match changesets, and changesets' indices.
+
+    Also returns a list indicating whether the match was exact or not.
+    An exact match means that both date, author and commit ID of the changeset
+    match the review request."""
     revreqs = []
     indices = []
+    exact = []
     for i, changeset in enumerate(changesets):
         try:
             revreq = find_review_request(root, rbrepoid, changeset)
             revreqs.append(revreq)
             indices.append(i)
+            print revreq.extra_data
+            if 'real_commit_id' in revreq.extra_data \
+               and revreq.extra_data['real_commit_id'] == changeset:
+                exact.append(True)
+            else:
+                exact.append(False)
         except NotFoundError:
             pass
-    return revreqs, indices
+    return revreqs, indices, exact
 
 
 def find_last_approved(revreqs):
