@@ -195,12 +195,10 @@ def is_approved(changesets):
 def add_to_pending(revreq, root, ticket_url, ticket_prefixes,
                    changesets, parent):
     """Add any new changesets to pending review request."""
-    if revreq.approved:
-        logging.info("Review request has been approved by you, but" +
-                     " must also be approved by someone else.")
-    logging.info("Adding any new commits to this review request.")
-    hghook.update_and_publish(root, ticket_url, ticket_prefixes,
-                              changesets, revreq, parent=parent)
+    if revreq.extra_data['real_commit_id'] != changesets[-1]:
+        logging.info("Adding new commits to this review request.")
+        hghook.update_and_publish(root, ticket_url, ticket_prefixes,
+                                  changesets, revreq, parent=parent)
     logging.warning("Cannot push until this review request" +
                     " is completed.")
     logging.warning("URL: {0}".format(revreq.absolute_url))
