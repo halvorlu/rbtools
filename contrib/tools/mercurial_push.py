@@ -57,6 +57,11 @@ ticket_url:
 The URL for the issue/bug/ticket tracker. Any references to issues/bugs/tickets
 in the commit messages are linked to this URL as <ticket_url><ticket_id>
 
+ticket_prefixes:
+Comma-separated list of prefixes that are allowed in ticket IDs.
+Example: "ticket-prefixes = app-, prog-" will cause both "fixes app-1",
+"fixes prog-2" and "fixes 3" to be recognized as references to tickets.
+
 allow_merge:
 True/1 if merges should be approved automatically, False/0 if not (default).
 
@@ -70,6 +75,7 @@ from rbtools.utils.filesystem import load_config
 from rbtools.api.errors import APIError
 import logging
 import getpass
+import itertools
 
 
 CONFIG_SECTION = "reviewboardhook"
@@ -134,12 +140,15 @@ def push_review_hook_base(root, rbrepo, node, url, submitter):
     changesets = hghook.list_of_incoming(node)
     parent = node + "^1"
     logging.info("{0} changesets received.".format(len(changesets)))
-    revreqs, indices = hghook.find_review_requests(root, rbrepo, changesets)
-    last_approved_revreq = hghook.find_last_approved(revreqs)
+    revreqs, indices, exact = hghook.find_review_requests(root, rbrepo,
+                                                          changesets)
+    exact_revreqs = list(itertools.compress(revreqs, exact))
+    exact_indices = list(itertools.compress(indices, exact))
+    last_approved_revreq = hghook.find_last_approved(exact_revreqs)
     if last_approved_revreq == -1:
         last_approved = -1
     else:
-        last_approved = indices[last_approved_revreq]
+        last_approved = exact_indices[last_approved_revreq]
     not_approved = changesets[last_approved + 1:]
     if is_approved(not_approved):
         for revreq in revreqs:
@@ -147,16 +156,17 @@ def push_review_hook_base(root, rbrepo, node, url, submitter):
             hghook.close_request(revreq)
         return hghook.HOOK_SUCCESS
     else:
-        if last_approved_revreq != len(revreqs) - 1:
-            logging.info("Pending review request found.")
-            revreq = revreqs[-1]
-            add_to_pending(revreq, root, ticket_url, ticket_prefixes,
-                           not_approved, parent)
-        else:
+        if last_approved_revreq == len(revreqs) - 1:
+            # All known review requests have been approved
             logging.info("Creating review request for new changesets.")
             revreq = create(root, rbrepo, submitter, url, not_approved[-1])
             hghook.update_and_publish(root, ticket_url, ticket_prefixes,
                                       not_approved, revreq, parent=parent)
+        else:
+            logging.info("Pending review request found.")
+            revreq = revreqs[-1]
+            add_to_pending(revreq, root, ticket_url, ticket_prefixes,
+                           not_approved, parent)
         if last_approved > -1:
             logging.info("If you want to push the already approved changes,")
             logging.info("you can (probably) do this by executing")
@@ -188,21 +198,19 @@ def add_to_pending(revreq, root, ticket_url, ticket_prefixes,
     if revreq.approved:
         logging.info("Review request has been approved by you, but" +
                      " must also be approved by someone else.")
-    if revreq.commit_id != changesets[-1]:
-        logging.info("Adding new commits to this review request.")
-        hghook.update_and_publish(root, ticket_url, ticket_prefixes,
-                                  changesets, revreq, parent=parent)
-    else:
-        logging.info("No new commits since last time.")
+    logging.info("Adding any new commits to this review request.")
+    hghook.update_and_publish(root, ticket_url, ticket_prefixes,
+                              changesets, revreq, parent=parent)
     logging.warning("Cannot push until this review request" +
                     " is completed.")
     logging.warning("URL: {0}".format(revreq.absolute_url))
 
 
-def create(root, rbrepoid, submitter, url, commit_id):
+def create(root, rbrepoid, submitter, url, changeset):
     """Return a new review request for the given changesets."""
     review_requests = root.get_review_requests(only_fields='',
                                                only_links='create')
+    commit_id = hghook.date_author_hash(changeset)
     try:
         revreq = review_requests.create(commit_id=commit_id,
                                         repository=rbrepoid,
