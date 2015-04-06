@@ -263,7 +263,6 @@ def find_review_requests(root, rbrepoid, changesets):
             revreq = find_review_request(root, rbrepoid, changeset)
             revreqs.append(revreq)
             indices.append(i)
-            print revreq.extra_data
             if 'real_commit_id' in revreq.extra_data \
                and revreq.extra_data['real_commit_id'] == changeset:
                 exact.append(True)
