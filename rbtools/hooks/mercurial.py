@@ -201,18 +201,29 @@ def approved_by_others(revreq):
     revreq_user_id = revreq.get_submitter(only_fields='id', only_links='').id
     reviews = revreq.get_reviews(only_fields='ship_it,timestamp',
                                  only_links='user')
+    old_reviews = []
+    self_approved = False
     for review in reviews:
         review_user = review.get_user(only_fields='id,username',
                                       only_links='')
         user_id = review_user.id
         if review.ship_it:
-            logging.info("Review request {0} has been approved by {1}"
-                         .format(revreq.id, review_user.username))
+            logging.debug("Review request {0} has been approved by {1}"
+                          .format(revreq.id, review_user.username))
             review_time = datetime_from_timestamp(review.timestamp)
             if review_time < diff_date:
-                logging.info("... but the diff has been updated since then.")
+                old_reviews.append(review_user.username)
             elif user_id != revreq_user_id:
                 return True
+            if user_id == revreq_user_id:
+                self_approved = True
+    if len(old_reviews) > 0:
+        logging.info("Review request has been approved by "
+                     + ", ".join(old_reviews) + ",")
+        logging.info("but not after the last diff update.")
+    if self_approved:
+        logging.info("Review request has been approved by you,")
+        logging.info("but must also be approved by someone else.")
     return False
 
 
