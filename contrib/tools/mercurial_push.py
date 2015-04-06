@@ -31,6 +31,8 @@ by someone else, i.e. someone else than the one doing the push.
 The hook can allow merges to pass without approval (see configuration below),
 in order to avoid the need to review simple merges with commits that entered
 the central repository while the review was under way.
+The hook uses a date/author hash to recognize changesets, so amended/rebased
+changesets are recognized properly.
 
 The hook submits review requests using the username of the current user, but
 can be configured to use a special user for logging in, which submits on
