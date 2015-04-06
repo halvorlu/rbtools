@@ -139,7 +139,7 @@ def linkify_ticket_refs(text, base_url, prefixes=None):
         return substr
 
     text = re.sub(TICKET_TRIGGER + ticket_id +
-                  ("(?:" + TICKET_JOIN + ticket_id + ")?")*10,
+                  ("(?:" + TICKET_JOIN + ticket_id + ")?") * 10,
                   replace_num_with_link, text,
                   flags=re.IGNORECASE)
     return text
@@ -157,7 +157,7 @@ def find_ticket_refs(text, prefixes=None):
     safe_prefixes = [re.escape(prefix) for prefix in prefixes]
     ticket_id = "#?((?:" + "|".join(safe_prefixes) + r")\d+)"
     matches = re.findall(TICKET_TRIGGER + ticket_id +
-                         ("(?:" + TICKET_JOIN + ticket_id + ")?")*10, text,
+                         ("(?:" + TICKET_JOIN + ticket_id + ")?") * 10, text,
                          flags=re.IGNORECASE)
     for match in matches:
         for submatch in match:

@@ -218,8 +218,8 @@ def approved_by_others(revreq):
             if user_id == revreq_user_id:
                 self_approved = True
     if len(old_reviews) > 0:
-        logging.info("Review request has been approved by "
-                     + ", ".join(old_reviews) + ",")
+        logging.info("Review request has been approved by " +
+                     ", ".join(old_reviews) + ",")
         logging.info("but not after the last diff update.")
     if self_approved:
         logging.info("Review request has been approved by you,")
