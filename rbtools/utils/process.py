@@ -112,9 +112,23 @@ def execute(command,
                 data = [line.encode('utf-8') for line in data]
         elif not split_lines:
             if results_unicode and isinstance(data, bytes):
-                data = data.decode('utf-8')
+                try:
+                    data = data.decode('utf-8')
+                except UnicodeDecodeError:
+                    # Try to read line by line, in case lines are encoded
+                    # differently, which may happen with e.g. "hg diff"
+                    lines = []
+                    for line in data.split(b'\n'):
+                        try:
+                            decoded_line = line.decode('utf-8')
+                        except UnicodeDecodeError:
+                            decoded_line = line.decode('latin-1')
+                        lines.append(decoded_line)
+                    data = "\n".join(lines)
             elif not results_unicode and isinstance(data, six.text_type):
                 data = line.encode('utf-8')
+        elif not results_unicode and isinstance(data, six.text_type):
+            data = line.encode('utf-8')
 
     if return_error_code:
         return rc, data
