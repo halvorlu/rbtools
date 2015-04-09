@@ -100,18 +100,27 @@ def execute(command,
     if rc and none_on_ignored_error:
         data = None
 
-    # If Popen is called with universal_newlines=True, the resulting data
-    # returned from stdout will be a text stream (and therefore a unicode
-    # object). Otherwise, it will be a byte stream. Translate the results into
-    # the desired type.
-    if split_lines and len(data) > 0:
-        if results_unicode and isinstance(data[0], bytes):
-            data = [line.decode('utf-8') for line in data]
-        elif not results_unicode and isinstance(data[0], six.text_type):
-            data = [line.encode('utf-8') for line in data]
-    elif not split_lines:
-        if results_unicode and isinstance(data, bytes):
-            data = data.decode('utf-8')
+    if data is not None:
+        # If Popen is called with universal_newlines=True, the resulting data
+        # returned from stdout will be a text stream (and therefore a unicode
+        # object). Otherwise, it will be a byte stream. Translate the results
+        # into the desired type.
+        if split_lines and len(data) > 0:
+            if results_unicode and isinstance(data[0], bytes):
+                data = [line.decode('utf-8') for line in data]
+            elif not results_unicode and isinstance(data[0], six.text_type):
+                data = [line.encode('utf-8') for line in data]
+        elif not split_lines:
+            if results_unicode and isinstance(data, bytes):
+                try:
+                    data = data.decode('utf-8')
+                except UnicodeDecodeError:
+                    # Try to read line by line, in case lines are encoded
+                    # differently, which may happen with e.g. "hg diff"
+                    # or "git diff"
+                    data = decode_lines(data)
+            elif not results_unicode and isinstance(data, six.text_type):
+                data = line.encode('utf-8')
         elif not results_unicode and isinstance(data, six.text_type):
             data = line.encode('utf-8')
 
@@ -119,3 +128,15 @@ def execute(command,
         return rc, data
     else:
         return data
+
+
+def decode_lines(data):
+    """Decode data line by line, trying both latin-1 and utf-8."""
+    lines = []
+    for line in data.split(b'\n'):
+        try:
+            decoded_line = line.decode('utf-8')
+        except UnicodeDecodeError:
+            decoded_line = line.decode('latin-1')
+        lines.append(decoded_line)
+    return "\n".join(lines)
