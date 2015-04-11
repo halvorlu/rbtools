@@ -356,13 +356,6 @@ def get_root(config):
     return root
 
 
-def admin_email(root):
-    """Return admin email."""
-    users = root.get_users(q='admin', only_fields='email',
-                           only_links='')
-    return users[0].email
-
-
 def get_repo(root, path):
     """Get ID for repository with given file path."""
     repos = root.get_repositories(path=path, only_fields='id',
@@ -371,7 +364,6 @@ def get_repo(root, path):
         raise LoginError("Could not open ReviewBoard repository for path\n" +
                          "{0}\n".format(path) +
                          "Do you have the permissions to access this" +
-                         " repository?\nAsk admin ({0})"
-                         .format(admin_email(root)) +
+                         " repository?\nAsk administrator " +
                          " to get permissions.")
     return repos[0].id
