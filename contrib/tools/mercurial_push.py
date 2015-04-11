@@ -67,6 +67,9 @@ Example: "ticket-prefixes = app-, prog-" will cause both "fixes app-1",
 allow_merge:
 True/1 if merges should be approved automatically, False/0 if not (default).
 
+publish:
+True/1 if review request drafts should be published by the hook (default).
+
 To enable the hook, add the following line in the [hooks] section:
 pretxnchangegroup.rb = /path/to/hook/mercurial_push.py
 """
