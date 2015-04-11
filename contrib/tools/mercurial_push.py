@@ -183,6 +183,7 @@ def publish_maybe(revreq):
     publish_draft = hghook.configbool("reviewboardhook", "publish",
                                       default=True)
     if publish_draft:
+        revreq = revreq.get_self()  # Update request to get draft
         try:
             draft = revreq.get_draft(only_links='update', only_fields='')
             draft.update(public=True)
