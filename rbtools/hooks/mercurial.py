@@ -243,7 +243,7 @@ def list_of_incoming(node):
 def find_review_request(root, rbrepo_id, changeset):
     """Find a review request in the given repo for the given changeset."""
     fields = 'approved,id,absolute_url,commit_id,description,extra_data'
-    links = 'submitter,reviews,update,diffs,draft'
+    links = 'submitter,reviews,update,diffs,draft,self'
 
     commit_id = date_author_hash(changeset)
 
