@@ -151,7 +151,7 @@ def test_hgdiff():
     hexid = extcmd("hg id -i").strip()
     diff = differ.diff(hexid+"^1", hexid)
     assert len(diff['diff']) > 0
-    write_to_file("diff", diff['diff'])
+    write_to_file("diff", diff['diff'].encode('utf-8'))
     extcmd("hg up tip^1")
     extcmd("hg import diff -m applydiff")
     hexid2 = extcmd("hg id -i").strip()
@@ -492,24 +492,50 @@ def test_rebase():
     assert "tmp22" in revreq2.description
 
 
-def test_encodings():
-    """Test that hook different encodings."""
-    os.chdir(TEST_REPO_PATH)
-    write_to_file("tmp23.txt", u"hæææ".encode("latin-1"))
-    extcmd("hg add tmp23.txt")
-    extcmd("hg commit -m tmp23ø")
-    firsthex = extcmd("hg id -i").strip()
+def test_hook_base_nopublish():
     root = get_root()
+    from mercurial import hg, ui
+    os.chdir(TEST_REPO_PATH)
+    # Turn off publishing
+    write_to_file(".hg/hgrc", "[reviewboardhook]\n"
+                  + "ticket_url = http://none/\n"
+                  + "publish = False\n")
+    write_to_file("tmp30.txt", "høæå")
+    extcmd("hg add tmp30.txt")
+    extcmd("hg commit -m tmp30øæ")
+    firsthex = extcmd("hg id -i").strip()
     rbrepo = get_repo_id(root)
     assert push_review_hook_base(root, rbrepo, firsthex,
                                  TEST_SERVER, TEST_USER) == rbh.HOOK_FAILED
-    write_to_file("tmp23.txt", u"blæææ".encode("utf-8"))
-    extcmd("hg commit -m tmp23æ")
+    assert push_review_hook_base(root, rbrepo, firsthex,
+                                 TEST_SERVER, TEST_USER) == rbh.HOOK_FAILED
+    firsthash = rbh.date_author_hash(firsthex)
+    revreq = root.get_review_requests(commit_id=firsthash,
+                                      repository=rbrepo)[0]
+    draft = revreq.get_draft()
+    assert draft.summary == u"tmp30øæ"
+    assert u"tmp30øæ" in draft.description
+    write_to_file("tmp30.txt", "høæåææ")
+    extcmd("hg commit -m tmp30-2øæ")
     secondhex = extcmd("hg id -i").strip()
     assert push_review_hook_base(root, rbrepo, firsthex,
                                  TEST_SERVER, TEST_USER) == rbh.HOOK_FAILED
-    revreq = root.get_review_requests(commit_id=rbh.date_author_hash(secondhex),
-                                      repository=rbrepo,
-                                      status='all')[0]
-    assert u"tmp23ø" in revreq.description
-    assert u"tmp23æ" in revreq.description
+    secondhash = rbh.date_author_hash(secondhex)
+    revreq2 = root.get_review_requests(commit_id=firsthash,
+                                       repository=rbrepo)[0]
+    assert revreq.id == revreq2.id
+    draft = revreq2.get_draft()
+    assert draft.summary == u"tmp30øæ"
+    assert u"tmp30øæ" in draft.description
+    assert u"tmp30-2øæ" in draft.description
+    draft.update(public=True)
+    revreq = root.get_review_requests(commit_id=secondhash,
+                                      repository=rbrepo)[0]
+    root = get_admin_root()
+    approve_revreq(root, rbrepo, secondhash)
+    root = get_root()
+    assert push_review_hook_base(root, rbrepo, firsthex,
+                                 TEST_SERVER, TEST_USER) == rbh.HOOK_SUCCESS
+    write_to_file(".hg/hgrc", "[reviewboardhook]\n"
+                  + "ticket_url = http://none/\n"
+                  + "publish = True\n")
