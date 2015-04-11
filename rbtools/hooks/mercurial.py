@@ -365,6 +365,6 @@ def get_repo(root, path):
         raise LoginError("Could not open ReviewBoard repository for path\n" +
                          "{0}\n".format(path) +
                          "Do you have the permissions to access this" +
-                         " repository?\nAsk administrator " +
+                         " repository?\nAsk the administrator" +
                          " to get permissions.")
     return repos[0].id
