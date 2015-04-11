@@ -223,6 +223,7 @@ def test_update_draft():
     assert revreq.public
     assert revreq.status == 'pending'
     assert revreq.commit_id == commit_id
+    assert revreq.branch == "default"
     # Now make another commit and make sure review request is updated
     write_to_file("tmp5.txt", "hållå")
     extcmd("hg commit -m tmp5hållå")
@@ -236,6 +237,7 @@ def test_update_draft():
     assert revreq.public
     assert revreq.status == 'pending'
     assert revreq.commit_id == rbh.date_author_hash(repo['tip'].hex())
+    assert revreq.branch == "default"
     assert u"tmp5hållå" in revreq.description
     assert u"tmp5ædd" in revreq.description
 
@@ -514,6 +516,7 @@ def test_hook_base_nopublish():
                                       repository=rbrepo)[0]
     draft = revreq.get_draft()
     assert draft.summary == u"tmp30øæ"
+    assert not draft.public
     assert u"tmp30øæ" in draft.description
     write_to_file("tmp30.txt", "høæåææ")
     extcmd("hg commit -m tmp30-2øæ")
@@ -526,6 +529,7 @@ def test_hook_base_nopublish():
     assert revreq.id == revreq2.id
     draft = revreq2.get_draft()
     assert draft.summary == u"tmp30øæ"
+    assert not draft.public
     assert u"tmp30øæ" in draft.description
     assert u"tmp30-2øæ" in draft.description
     draft.update(public=True)
