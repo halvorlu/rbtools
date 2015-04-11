@@ -84,12 +84,14 @@ def update_draft(root, ticket_url, ticket_prefixes,
     commit_id = date_author_hash(changesets[-1])
     extra_data = {'extra_data.real_commit_id': changesets[-1]}
     revreq.update(**extra_data)
+    branch = extcmd(["hg", "branch"]).strip()
     draft = revreq.get_draft(only_links='update', only_fields='')
     draft = draft.update(
         summary=summary,
         bugs_closed=bugs_closed,
         description=description,
         description_text_type='markdown',
+        branch=branch,
         commit_id=commit_id)
 
 
@@ -363,6 +365,6 @@ def get_repo(root, path):
         raise LoginError("Could not open ReviewBoard repository for path\n" +
                          "{0}\n".format(path) +
                          "Do you have the permissions to access this" +
-                         " repository?\nAsk administrator " +
+                         " repository?\nAsk the administrator" +
                          " to get permissions.")
     return repos[0].id
