@@ -65,9 +65,9 @@ def date_author_hash(changeset):
     return hashlib.md5(text).hexdigest()
 
 
-def update_and_publish(root, ticket_url, ticket_prefixes,
-                       changesets, revreq, parent=None):
-    """Update and publish given review request based on changesets.
+def update_draft(root, ticket_url, ticket_prefixes,
+                 changesets, revreq, parent=None):
+    """Update review request draft based on changesets.
 
     parent is the last commit known by the repository before the push."""
     old_description = revreq.description
@@ -90,8 +90,7 @@ def update_and_publish(root, ticket_url, ticket_prefixes,
         bugs_closed=bugs_closed,
         description=description,
         description_text_type='markdown',
-        commit_id=commit_id,
-        public=True)
+        commit_id=commit_id)
 
 
 class MercurialDiffer(object):
