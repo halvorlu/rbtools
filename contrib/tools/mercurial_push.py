@@ -162,19 +162,38 @@ def push_review_hook_base(root, rbrepo, node, url, submitter):
             # All known review requests have been approved
             logging.info("Creating review request for new changesets.")
             revreq = create(root, rbrepo, submitter, url, not_approved[-1])
-            hghook.update_and_publish(root, ticket_url, ticket_prefixes,
-                                      not_approved, revreq, parent=parent)
+            hghook.update_draft(root, ticket_url, ticket_prefixes,
+                                not_approved, revreq, parent=parent)
         else:
             logging.info("Pending review request found.")
             revreq = revreqs[-1]
             add_to_pending(revreq, root, ticket_url, ticket_prefixes,
                            not_approved, parent)
+        publish_maybe(revreq)
         if last_approved > -1:
             logging.info("If you want to push the already approved changes,")
             logging.info("you can (probably) do this by executing")
             logging.info("'hg push -r {0}'"
                          .format(changesets[last_approved]))
         return hghook.HOOK_FAILED
+
+
+def publish_maybe(revreq):
+    """Publish the review request's draft if config says so."""
+    publish_draft = hghook.configbool("reviewboardhook", "publish",
+                                      default=True)
+    if publish_draft:
+        try:
+            draft = revreq.get_draft(only_links='update', only_fields='')
+            draft.update(public=True)
+        except APIError as api_error:
+            # Error code 100 means draft does not exist,
+            # i.e. it is already published
+            if api_error.error_code != 100:
+                raise
+    else:
+        logging.info("The review request has not been published yet.")
+        logging.info("You must publish it manually.")
 
 
 def is_approved(changesets):
@@ -196,11 +215,11 @@ def is_approved(changesets):
 
 def add_to_pending(revreq, root, ticket_url, ticket_prefixes,
                    changesets, parent):
-    """Add any new changesets to pending review request."""
+    """Add any new changesets to draft of pending review request."""
     if revreq.extra_data['real_commit_id'] != changesets[-1]:
         logging.info("Adding new commits to this review request.")
-        hghook.update_and_publish(root, ticket_url, ticket_prefixes,
-                                  changesets, revreq, parent=parent)
+        hghook.update_draft(root, ticket_url, ticket_prefixes,
+                            changesets, revreq, parent=parent)
     logging.warning("Cannot push until this review request" +
                     " is completed.")
     logging.warning("URL: {0}".format(revreq.absolute_url))
