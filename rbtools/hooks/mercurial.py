@@ -65,9 +65,9 @@ def date_author_hash(changeset):
     return hashlib.md5(text).hexdigest()
 
 
-def update_and_publish(root, ticket_url, ticket_prefixes,
-                       changesets, revreq, parent=None):
-    """Update and publish given review request based on changesets.
+def update_draft(root, ticket_url, ticket_prefixes,
+                 changesets, revreq, parent=None):
+    """Update review request draft based on changesets.
 
     parent is the last commit known by the repository before the push."""
     old_description = revreq.description
@@ -84,14 +84,15 @@ def update_and_publish(root, ticket_url, ticket_prefixes,
     commit_id = date_author_hash(changesets[-1])
     extra_data = {'extra_data.real_commit_id': changesets[-1]}
     revreq.update(**extra_data)
+    branch = extcmd(["hg", "branch"]).strip()
     draft = revreq.get_draft(only_links='update', only_fields='')
     draft = draft.update(
         summary=summary,
         bugs_closed=bugs_closed,
         description=description,
         description_text_type='markdown',
-        commit_id=commit_id,
-        public=True)
+        branch=branch,
+        commit_id=commit_id)
 
 
 class MercurialDiffer(object):
@@ -244,13 +245,14 @@ def list_of_incoming(node):
 def find_review_request(root, rbrepo_id, changeset):
     """Find a review request in the given repo for the given changeset."""
     fields = 'approved,id,absolute_url,commit_id,description,extra_data'
-    links = 'submitter,reviews,update,diffs,draft'
+    links = 'submitter,reviews,update,diffs,draft,self'
 
     commit_id = date_author_hash(changeset)
 
     revreqs = root.get_review_requests(commit_id=commit_id,
                                        repository=rbrepo_id,
                                        status='all',
+                                       show_all_unpublished=True,
                                        only_fields=fields,
                                        only_links=links)
     if len(revreqs) > 0:
@@ -356,13 +358,6 @@ def get_root(config):
     return root
 
 
-def admin_email(root):
-    """Return admin email."""
-    users = root.get_users(q='admin', only_fields='email',
-                           only_links='')
-    return users[0].email
-
-
 def get_repo(root, path):
     """Get ID for repository with given file path."""
     repos = root.get_repositories(path=path, only_fields='id',
@@ -371,7 +366,6 @@ def get_repo(root, path):
         raise LoginError("Could not open ReviewBoard repository for path\n" +
                          "{0}\n".format(path) +
                          "Do you have the permissions to access this" +
-                         " repository?\nAsk admin ({0})"
-                         .format(admin_email(root)) +
+                         " repository?\nAsk the administrator" +
                          " to get permissions.")
     return repos[0].id
