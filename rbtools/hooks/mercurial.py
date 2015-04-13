@@ -252,6 +252,7 @@ def find_review_request(root, rbrepo_id, changeset):
     revreqs = root.get_review_requests(commit_id=commit_id,
                                        repository=rbrepo_id,
                                        status='all',
+                                       show_all_unpublished=True,
                                        only_fields=fields,
                                        only_links=links)
     if len(revreqs) > 0:
