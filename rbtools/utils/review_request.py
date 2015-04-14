@@ -94,6 +94,7 @@ def guess_existing_review_request_id(repository_info, repository_name,
     else:
         user = get_user(api_client, api_root, auth_required=True)
         username = user.username
+
     repository_id = get_repository_id(
         repository_info, api_root, repository_name)
 
@@ -101,10 +102,13 @@ def guess_existing_review_request_id(repository_info, repository_name,
         # Get only pending requests by the current user for this
         # repository.
         review_requests = api_root.get_review_requests(
-            repository=repository_id, from_user=username,
-            status='pending', expand='draft',
+            repository=repository_id,
+            from_user=username,
+            status='pending',
+            expand='draft',
             only_fields='id,summary,description,draft',
-            only_links='draft', show_all_unpublished=True)
+            only_links='draft',
+            show_all_unpublished=True)
 
         if not review_requests:
             raise CommandError('No existing review requests to update for '
