@@ -459,39 +459,35 @@ def test_rebase():
     rbrepo = get_repo_id(root)
     assert push_review_hook_base(root, rbrepo, firsthex,
                                  TEST_SERVER, TEST_USER) == rbh.HOOK_FAILED
-    write_to_file("tmp21.txt", "blæææ")
-    extcmd("hg commit -m tmp21-2")
-    secondhex = extcmd("hg id -i").strip()
+    # Create new commit one step back (new branch)
     extcmd("hg up -r -2")
-    write_to_file("tmp22.txt", "høøø")
+    write_to_file("tmp22.txt", "blæææ")
     extcmd("hg add tmp22.txt")
-    extcmd("hg commit -m tmp22")
-    thirdhex = extcmd("hg id -i").strip()
-    assert push_review_hook_base(root, rbrepo, thirdhex,
+    extcmd("hg commit -m tmp22-1")
+    secondhex = extcmd("hg id -i").strip()
+    assert push_review_hook_base(root, rbrepo, secondhex,
                                  TEST_SERVER, TEST_USER) == rbh.HOOK_FAILED
     root = get_admin_root()
-    approve_revreq(root, rbrepo, rbh.date_author_hash(thirdhex))
-    root = get_root()
-    extcmd("hg rebase -d {0}".format(secondhex))
-    thirdhex = extcmd("hg id -i").strip()
-    assert push_review_hook_base(root, rbrepo, firsthex,
-                                 TEST_SERVER, TEST_USER) == rbh.HOOK_FAILED
-    assert push_review_hook_base(root, rbrepo, firsthex,
-                                 TEST_SERVER, TEST_USER) == rbh.HOOK_FAILED
-    root = get_admin_root()
+    approve_revreq(root, rbrepo, rbh.date_author_hash(firsthex))
     approve_revreq(root, rbrepo, rbh.date_author_hash(secondhex))
     root = get_root()
+    # Rebase the new branch on top of the original
+    extcmd("hg rebase -d {0}".format(firsthex))
+    # First push fails since second changeset ID is changed
+    assert push_review_hook_base(root, rbrepo, firsthex,
+                                 TEST_SERVER, TEST_USER) == rbh.HOOK_FAILED
     assert push_review_hook_base(root, rbrepo, firsthex,
                                  TEST_SERVER, TEST_USER) == rbh.HOOK_SUCCESS
-    revreq1 = root.get_review_requests(commit_id=rbh.date_author_hash(secondhex),
+    revreq1 = root.get_review_requests(commit_id=rbh.date_author_hash(firsthex),
                                        repository=rbrepo,
                                        status='all')[0]
     assert "tmp21-1" in revreq1.description
-    assert "tmp21-2" in revreq1.description
-    revreq2 = root.get_review_requests(commit_id=rbh.date_author_hash(thirdhex),
+    assert revreq1.status == 'submitted'
+    revreq2 = root.get_review_requests(commit_id=rbh.date_author_hash(secondhex),
                                        repository=rbrepo,
                                        status='all')[0]
-    assert "tmp22" in revreq2.description
+    assert "tmp22-1" in revreq2.description
+    assert revreq2.status == 'submitted'
 
 
 def test_hook_base_nopublish():
