@@ -15,6 +15,7 @@ from rbtools.clients.mercurial import MercurialClient
 from rbtools.hooks.common import linkify_ticket_refs, find_ticket_refs
 
 
+LOGGER = logging.getLogger('reviewboardhook')
 HOOK_FAILED = True  # True means error (not equal to zero)
 HOOK_SUCCESS = False  # False means OK (equal to zero)
 DELIMITER = '\\(reviewboardhook will keep text below this line\\)\n'
@@ -48,11 +49,14 @@ def join_descriptions(old_description, new_description):
     return new_description + keep
 
 
-def upload_diff(root, changesets, revreq, parent):
-    """Upload a diff for the given changesets to given review request."""
+def calculate_diff(root, changesets, parent):
+    """Calculate the diff for the given changesets."""
     differ = MercurialDiffer(root)
-    diff_info = differ.diff(changesets[0] + '^1',
-                            changesets[-1], parent)
+    return differ.diff(changesets[0] + '^1', changesets[-1], parent)
+
+
+def upload_diff(diff_info, revreq, diff_hash):
+    """Upload diff to review request."""
     parent_diff = diff_info['parent_diff']
     diffs = revreq.get_diffs(only_links='upload_diff', only_fields='')
 
@@ -62,6 +66,8 @@ def upload_diff(root, changesets, revreq, parent):
                           base_commit_id=diff_info['base_commit_id'])
     else:
         diffs.upload_diff(diff_info['diff'])
+    extra_data = {'extra_data.diff_hash': diff_hash}
+    revreq.update(**extra_data)
 
 
 def date_author_hash(changeset):
@@ -69,6 +75,38 @@ def date_author_hash(changeset):
     text = extcmd(['hg', 'log', '-r', changeset,
                    '--template', '{author} {date}'])
     return hashlib.md5(text).hexdigest()
+
+
+def update_diff(root, changesets, revreq, parent=None):
+    """Return True if the diff had to be (and was) updated."""
+    if parent is None:
+        parent = changesets[0] + '^1'
+    diff_info = calculate_diff(root, changesets, parent)
+    diff_hash = calc_diff_hash(diff_info['diff'])
+#    LOGGER.debug('diff:')
+#    LOGGER.debug(diff_info['diff'].encode('utf-8'))
+    LOGGER.debug('hash: %s', diff_hash)
+    if 'diff_hash' in revreq.extra_data:
+        if diff_hash == revreq.extra_data['diff_hash']:
+            LOGGER.debug("No need to update diff")
+            return False
+        else:
+            LOGGER.debug("hashes: %s %s", diff_hash,
+                         revreq.extra_data['diff_hash'])
+    else:
+        LOGGER.debug("diff_hash not in extra_data")
+    LOGGER.debug("Need to update diff")
+    upload_diff(diff_info, revreq, diff_hash)
+    return True
+
+
+def calc_diff_hash(diff):
+    """Calculate diff hash that doesn't care about commit IDs."""
+    hasher = hashlib.md5()
+    for line in diff.split("\n"):
+        if not line.startswith("diff"):
+            hasher.update(line.encode("utf-8"))
+    return hasher.hexdigest()
 
 
 def update_draft(root, ticket_url, ticket_prefixes,
@@ -84,10 +122,8 @@ def update_draft(root, ticket_url, ticket_prefixes,
     description = join_descriptions(old_description, linked_description)
     summary = generate_summary(changesets)
 
-    if parent is None:
-        parent = changesets[0] + '^1'
+    update_diff(root, changesets, revreq, parent)
 
-    upload_diff(root, changesets, revreq, parent)
     string_refs = [six.text_type(x)
                    for x in find_ticket_refs(new_plain_description)]
     bugs_closed = ','.join(string_refs)
@@ -95,7 +131,7 @@ def update_draft(root, ticket_url, ticket_prefixes,
     extra_data = {'extra_data.real_commit_id': changesets[-1]}
     revreq.update(**extra_data)
     branch = extcmd(['hg', 'branch']).strip()
-    draft = revreq.get_draft(only_links='update', only_fields='')
+    draft = revreq.get_or_create_draft(only_links='update', only_fields='')
     draft = draft.update(
         summary=summary,
         bugs_closed=bugs_closed,
@@ -223,8 +259,6 @@ def approved_by_others(revreq):
                                       only_links='')
         user_id = review_user.id
         if review.ship_it:
-            logging.debug('Review request %s has been approved by %s'
-                          % (revreq.id, review_user.username))
             review_time = datetime_from_timestamp(review.timestamp)
             if review_time < diff_date:
                 old_reviews.append(review_user.username)
@@ -234,13 +268,14 @@ def approved_by_others(revreq):
                 self_approved = True
 
     if len(old_reviews) > 0:
-        logging.info('Review request has been approved by ' +
-                     ', '.join(old_reviews) + ',')
-        logging.info('but not after the last diff update.')
+        LOGGER.info('Review request %d has been approved by ' +
+                     ', '.join(old_reviews) + ',', revreq.id)
+        LOGGER.info('but not after the last diff update.')
+        LOGGER.debug('Last update: %s', str(diff_date))
 
     if self_approved:
-        logging.info('Review request has been approved by you,')
-        logging.info('but must also be approved by someone else.')
+        LOGGER.info('Review request has been approved by you,')
+        LOGGER.info('but must also be approved by someone else.')
 
     return False
 
@@ -281,28 +316,27 @@ def find_review_request(root, rbrepo_id, changeset):
 
 
 def find_review_requests(root, rbrepoid, changesets):
-    """Return rev. requests that match changesets, and changesets' indices.
-
-    Also returns a list indicating whether the match was exact or not.
-    An exact match means that both date, author and commit ID of the changeset
-    match the review request.
-    """
+    """Return rev. requests that match changesets, and changesets' indices."""
     revreqs = []
     indices = []
-    exact = []
     for i, changeset in enumerate(changesets):
         try:
             revreq = find_review_request(root, rbrepoid, changeset)
             revreqs.append(revreq)
             indices.append(i)
-            if 'real_commit_id' in revreq.extra_data \
-               and revreq.extra_data['real_commit_id'] == changeset:
-                exact.append(True)
-            else:
-                exact.append(False)
         except NotFoundError:
             pass
-    return revreqs, indices, exact
+    return revreqs, indices
+
+
+def exact_match(revreq, changeset):
+    """Return True if the review request matches the changeset exactly.
+
+    An exact match means that both date, author and commit ID of the changeset
+    match the review request.
+    """
+    return 'real_commit_id' in revreq.extra_data \
+        and revreq.extra_data['real_commit_id'] == changeset
 
 
 def find_last_approved(revreqs):
@@ -310,7 +344,7 @@ def find_last_approved(revreqs):
     last_approved = -1
     for i, revreq in enumerate(revreqs):
         if approved_by_others(revreq):
-            logging.info('Approved review request found: %s',
+            LOGGER.info('Approved review request found: %s',
                          revreq.absolute_url)
             last_approved = i
     return last_approved
@@ -323,9 +357,9 @@ def get_username(config):
         username = config['USERNAME']
     else:
         username = getpass.getuser()
-        logging.warning('You have not specified any username '
+        LOGGER.warning('You have not specified any username '
                         'in ~/.reviewboardrc')
-        logging.warning('Assuming %s as username.', username)
+        LOGGER.warning('Assuming %s as username.', username)
     return username
 
 
