@@ -4,7 +4,7 @@
 
 The hook was designed to make posting to Review Board easy for new or
 inexperienced users. It allows user to post to Review Board by using the
-ordinary "hg push", without any need to learn or install RBTools locally.
+ordinary 'hg push', without any need to learn or install RBTools locally.
 
 This hook fits the following workflow:
 1. A user makes some (local) commits
@@ -61,8 +61,8 @@ in the commit messages are linked to this URL as <ticket_url><ticket_id>
 
 ticket_prefixes:
 Comma-separated list of prefixes that are allowed in ticket IDs.
-Example: "ticket-prefixes = app-, prog-" will cause both "fixes app-1",
-"fixes prog-2" and "fixes 3" to be recognized as references to tickets.
+Example: 'ticket-prefixes = app-, prog-' will cause both 'fixes app-1',
+'fixes prog-2' and 'fixes 3' to be recognized as references to tickets.
 
 allow_merge:
 True/1 if merges should be approved automatically, False/0 if not (default).
@@ -116,8 +116,7 @@ def push_review_hook(node):
 
 def get_ticket_url():
     """Return URL root to issue tracker. Warn if not specified in hgrc."""
-    ticket_url = hghook.hg_config(CONFIG_SECTION, 'ticket_url',
-                                  default='')
+    ticket_url = hghook.hg_config(CONFIG_SECTION, 'ticket_url', default='')
     if not ticket_url:
         repo_root = hghook.extcmd(['hg', 'root']).strip()
         LOGGER.warning('%s/.hg/hgrc should specify', repo_root)
