@@ -83,19 +83,9 @@ def update_diff(root, changesets, revreq, parent=None):
         parent = changesets[0] + '^1'
     diff_info = calculate_diff(root, changesets, parent)
     diff_hash = calc_diff_hash(diff_info['diff'])
-#    LOGGER.debug('diff:')
-#    LOGGER.debug(diff_info['diff'].encode('utf-8'))
-    LOGGER.debug('hash: %s', diff_hash)
     if 'diff_hash' in revreq.extra_data:
         if diff_hash == revreq.extra_data['diff_hash']:
-            LOGGER.debug("No need to update diff")
             return False
-        else:
-            LOGGER.debug("hashes: %s %s", diff_hash,
-                         revreq.extra_data['diff_hash'])
-    else:
-        LOGGER.debug("diff_hash not in extra_data")
-    LOGGER.debug("Need to update diff")
     upload_diff(diff_info, revreq, diff_hash)
     return True
 
@@ -269,7 +259,7 @@ def approved_by_others(revreq):
 
     if len(old_reviews) > 0:
         LOGGER.info('Review request %d has been approved by ' +
-                     ', '.join(old_reviews) + ',', revreq.id)
+                    ', '.join(old_reviews) + ',', revreq.id)
         LOGGER.info('but not after the last diff update.')
         LOGGER.debug('Last update: %s', str(diff_date))
 
@@ -345,7 +335,7 @@ def find_last_approved(revreqs):
     for i, revreq in enumerate(revreqs):
         if approved_by_others(revreq):
             LOGGER.info('Approved review request found: %s',
-                         revreq.absolute_url)
+                        revreq.absolute_url)
             last_approved = i
     return last_approved
 
@@ -358,7 +348,7 @@ def get_username(config):
     else:
         username = getpass.getuser()
         LOGGER.warning('You have not specified any username '
-                        'in ~/.reviewboardrc')
+                       'in ~/.reviewboardrc')
         LOGGER.warning('Assuming %s as username.', username)
     return username
 
