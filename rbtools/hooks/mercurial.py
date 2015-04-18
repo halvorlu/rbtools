@@ -66,6 +66,7 @@ def upload_diff(diff_info, revreq, diff_hash):
                           base_commit_id=diff_info['base_commit_id'])
     else:
         diffs.upload_diff(diff_info['diff'])
+
     extra_data = {'extra_data.diff_hash': diff_hash}
     revreq.update(**extra_data)
 
@@ -78,16 +79,17 @@ def date_author_hash(changeset):
 
 
 def update_diff(root, changesets, revreq, parent=None):
-    """Return True if the diff had to be (and was) updated."""
+    """Update the diff if it has been changed."""
     if parent is None:
         parent = changesets[0] + '^1'
     diff_info = calculate_diff(root, changesets, parent)
     diff_hash = calc_diff_hash(diff_info['diff'])
+
     if 'diff_hash' in revreq.extra_data:
         if diff_hash == revreq.extra_data['diff_hash']:
-            return False
+            return
+
     upload_diff(diff_info, revreq, diff_hash)
-    return True
 
 
 def calc_diff_hash(diff):
