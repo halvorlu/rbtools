@@ -93,9 +93,9 @@ def update_diff(root, changesets, revreq, parent=None):
 def calc_diff_hash(diff):
     """Calculate diff hash that doesn't care about commit IDs."""
     hasher = hashlib.md5()
-    for line in diff.split("\n"):
-        if not line.startswith("diff"):
-            hasher.update(line.encode("utf-8"))
+    for line in diff.split(b'\n'):
+        if not line.startswith(b'diff'):
+            hasher.update(line)
     return hasher.hexdigest()
 
 

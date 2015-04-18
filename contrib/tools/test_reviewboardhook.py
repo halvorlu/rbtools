@@ -335,7 +335,7 @@ def test_hgdiff():
     hexid = extcmd("hg id -i").strip()
     diff = differ.diff(hexid+"^1", hexid)
     assert len(diff['diff']) > 0
-    write_to_file("diff", diff['diff'].encode('utf-8'))
+    write_to_file("diff", diff['diff'])
     extcmd("hg up tip^1")
     extcmd("hg import diff -m applydiff")
     hexid2 = extcmd("hg id -i").strip()

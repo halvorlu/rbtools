@@ -183,11 +183,15 @@ def push_review_hook_base(root, rbrepo, node, url, submitter):
                            new_changesets, revreq, parent)
         approvals.append(False)
     else:
-        LOGGER.info('Pending review request found, adding new changesets.')
+        LOGGER.info('Pending review request %d found.', revreq.id)
+        if len(new_changesets) > 0:
+            LOGGER.info('Adding new changesets to this review request.')
+
         if len(revreqs) > 1:
             revreq_changesets = changesets[indices[-2] + 1:]
         else:
             revreq_changesets = changesets
+
         update_and_publish(root, ticket_url, ticket_prefixes,
                            revreq_changesets, revreq, parent)
         approvals[-1] = approvals[-1] and is_approved(new_changesets)
