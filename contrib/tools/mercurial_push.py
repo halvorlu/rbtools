@@ -75,7 +75,6 @@ pretxnchangegroup.rb = /path/to/hook/mercurial_push.py
 """
 from __future__ import unicode_literals
 
-import itertools
 import getpass
 import logging
 
