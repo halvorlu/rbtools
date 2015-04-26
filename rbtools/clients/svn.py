@@ -1,5 +1,6 @@
 from __future__ import unicode_literals
 
+import getpass
 import logging
 import os
 import posixpath
@@ -12,9 +13,10 @@ from six.moves.urllib.parse import unquote
 
 from rbtools.api.errors import APIError
 from rbtools.clients import PatchResult, RepositoryInfo, SCMClient
-from rbtools.clients.errors import (InvalidRevisionSpecError,
+from rbtools.clients.errors import (AuthenticationError,
+                                    InvalidRevisionSpecError,
                                     MinimumVersionError, OptionsCheckError,
-                                    TooManyRevisionsError)
+                                    SCMError, TooManyRevisionsError)
 from rbtools.utils.checks import (check_gnu_diff, check_install,
                                   is_valid_version)
 from rbtools.utils.diffs import (filename_match_any_patterns, filter_diff,
@@ -55,7 +57,13 @@ class SVNClient(SCMClient):
     def __init__(self, **kwargs):
         super(SVNClient, self).__init__(**kwargs)
 
+        self._svn_info_cache = {}
+        self._svn_repository_info_cache = None
+
     def get_repository_info(self):
+        if self._svn_repository_info_cache:
+            return self._svn_repository_info_cache
+
         if not check_install(['svn', 'help']):
             logging.debug('Unable to execute "svn help": skipping SVN')
             return None
@@ -109,7 +117,11 @@ class SVNClient(SCMClient):
         else:
             self.subversion_client_version = tuple(map(int, m.groups()))
 
-        return SVNRepositoryInfo(path, base_path, uuid)
+        self._svn_repository_info_cache = SVNRepositoryInfo(path,
+                                                            base_path,
+                                                            uuid)
+
+        return self._svn_repository_info_cache
 
     def parse_revision_spec(self, revisions=[]):
         """Parses the given revision spec.
@@ -167,7 +179,8 @@ class SVNClient(SCMClient):
                 # sense if we have a working copy.
                 if not self.options.repository_url:
                     status = self._run_svn(['status', '--cl', str(revision),
-                                            '--ignore-externals', '--xml'])
+                                            '--ignore-externals', '--xml'],
+                                           results_unicode=False)
                     cl = ElementTree.fromstring(status).find('changelist')
                     if cl is not None:
                         # TODO: this should warn about mixed-revision working
@@ -195,14 +208,25 @@ class SVNClient(SCMClient):
             raise TooManyRevisionsError
 
     def _convert_symbolic_revision(self, revision):
-        command = ['log', '-r', str(revision), '-l', '1', '--xml']
+        command = ['-r', six.text_type(revision), '-l', '1']
+
         if getattr(self.options, 'repository_url', None):
             command.append(self.options.repository_url)
-        log = self._run_svn(command, ignore_errors=True,
-                            none_on_ignored_error=True)
+
+        log = self.svn_log_xml(command)
 
         if log is not None:
-            root = ElementTree.fromstring(log)
+            try:
+                root = ElementTree.fromstring(log)
+            except ValueError as e:
+                # _convert_symbolic_revision() nominally raises a ValueError to
+                # indicate any failure to determine the revision number from
+                # the log entry.  Here, we explicitly catch a ValueError from
+                # ElementTree and raise a generic SCMError so that this
+                # specific failure to parse the XML log output is
+                # differentiated from the nominal case.
+                raise SCMError('Failed to parse svn log - %s.' % e)
+
             logentry = root.find('logentry')
             if logentry is not None:
                 return int(logentry.attrib['revision'])
@@ -631,8 +655,6 @@ class SVNClient(SCMClient):
 
     def svn_info(self, path, ignore_errors=False):
         """Return a dict which is the result of 'svn info' at a given path."""
-        svninfo = {}
-
         # SVN's internal path recognizers think that any file path that
         # includes an '@' character will be path@rev, and skips everything that
         # comes after the '@'. This makes it hard to do operations on files
@@ -640,21 +662,26 @@ class SVNClient(SCMClient):
         if b'@' in path and not path[-1] == b'@':
             path += b'@'
 
-        result = self._run_svn([b"info", path],
-                               split_lines=True,
-                               ignore_errors=ignore_errors,
-                               none_on_ignored_error=True,
-                               results_unicode=False)
-        if result is None:
-            return None
+        if path not in self._svn_info_cache:
+            result = self._run_svn([b"info", path],
+                                   split_lines=True,
+                                   ignore_errors=ignore_errors,
+                                   none_on_ignored_error=True,
+                                   results_unicode=False)
+            if result is None:
+                self._svn_info_cache[path] = None
+            else:
+                svninfo = {}
 
-        for info in result:
-            parts = info.strip().split(b': ', 1)
-            if len(parts) == 2:
-                key, value = parts
-                svninfo[key] = value
+                for info in result:
+                    parts = info.strip().split(b': ', 1)
+                    if len(parts) == 2:
+                        key, value = parts
+                        svninfo[key] = value
 
-        return svninfo
+                self._svn_info_cache[path] = svninfo
+
+        return self._svn_info_cache[path]
 
     # Adapted from server code parser.py
     def parse_filename_header(self, s):
@@ -856,10 +883,48 @@ class SVNClient(SCMClient):
         if getattr(self.options, 'svn_username', None):
             cmdline += ['--username', self.options.svn_username]
 
+        if getattr(self.options, 'svn_prompt_password', None):
+            self.options.svn_prompt_password = False
+            self.options.svn_password = getpass.getpass(b'SVN Password:')
+
         if getattr(self.options, 'svn_password', None):
             cmdline += ['--password', self.options.svn_password]
 
         return execute(cmdline, *args, **kwargs)
+
+    def svn_log_xml(self, svn_args, *args, **kwargs):
+        """Run SVN log non-interactively and retrieve XML output.
+
+        We cannot run SVN log interactively and retrieve XML output because the
+        authentication prompts will be intermixed with the XML output and cause
+        XML parsing to fail.
+
+        This function returns None (as if none_on_ignored_error where True) if
+        an error occurs that is not an authentication error.
+        """
+        command = ['log', '--non-interactive', '--xml'] + svn_args
+        rc, result, errors = self._run_svn(command,
+                                           *args,
+                                           return_error_code=True,
+                                           with_errors=False,
+                                           return_errors=True,
+                                           ignore_errors=True,
+                                           results_unicode=False,
+                                           **kwargs)
+
+        if rc:
+            # SVN Error E215004: --non-interactive was passed but the remote
+            # repository requires authentication.
+            if errors.startswith(b'svn: E215004'):
+                raise AuthenticationError(
+                    'Could not authenticate against remote SVN repository. '
+                    'Please provide the --svn-username and either the '
+                    '--svn-password or --svn-prompt-password command-line '
+                    'options.')
+
+            return None
+
+        return result
 
     def check_options(self):
         if getattr(self.options, 'svn_show_copies_as_adds', None):

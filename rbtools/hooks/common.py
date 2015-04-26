@@ -111,35 +111,36 @@ def get_review_request_approval(server_url, username, password,
     return review_request.approved, review_request.approval_failure
 
 
-TICKET_VERBS = ["close", "closed", "closes", "fix", "fixes", "fixed",
-                "addresses", "re", "references", "refs", "see",
-                "issue", "bug", "ticket"]
+TICKET_VERBS = ['close', 'closed', 'closes', 'fix', 'fixes', 'fixed',
+                'addresses', 're', 'references', 'refs', 'see',
+                'issue', 'bug', 'ticket']
 
-TICKET_TRIGGER = "(?:" + "|".join(TICKET_VERBS) + r")\s*(?:ticket|bug)?:*\s*"
-TICKET_JOIN = r"\s*(?:,|and|, and)\s*"
+TICKET_TRIGGER = '(?:' + '|'.join(TICKET_VERBS) + r')\s*(?:ticket|bug)?:*\s*'
+TICKET_JOIN = r'\s*(?:,|and|, and)\s*'
 
 
 def linkify_ticket_refs(text, base_url, prefixes=None):
     """Return a text where all ticket references have been linkified.
 
     prefixes is a list of prefixes allowed before the ticket number.
-    For example, prefixes=["app-", ""] would recognize both "app-1" and "1"
-    as bug/ticket number 1. By default, prefixes=[""]."""
+    For example, prefixes=['app-', ''] would recognize both 'app-1' and '1'
+    as bug/ticket number 1. By default, prefixes=[''].
+    """
     if prefixes is None:
-        prefixes = [""]
+        prefixes = ['']
 
     safe_prefixes = [re.escape(prefix) for prefix in prefixes]
-    ticket_id = "(#?((?:" + "|".join(safe_prefixes) + r")\d+))"
+    ticket_id = '(#?((?:' + '|'.join(safe_prefixes) + r')\d+))'
 
     def replace_num_with_link(matchobj):
         """Replace all numbers with links."""
         substr = text[matchobj.start():matchobj.end()]
         substr = re.sub(ticket_id,
-                        r"[\1]({0}\2)".format(base_url), substr)
+                        r'[\1](%s\2)' % re.escape(base_url), substr)
         return substr
 
     text = re.sub(TICKET_TRIGGER + ticket_id +
-                  ("(?:" + TICKET_JOIN + ticket_id + ")?") * 10,
+                  ('(?:' + TICKET_JOIN + ticket_id + ')?') * 10,
                   replace_num_with_link, text,
                   flags=re.IGNORECASE)
     return text
@@ -149,15 +150,16 @@ def find_ticket_refs(text, prefixes=None):
     """Return list of ticket IDs referenced in given text.
 
     prefixes is a list of prefixes allowed before the ticket number.
-    For example, prefixes=["app-", ""] would recognize both "app-1" and "1"
-    as ticket IDs. By default, prefixes=[""]."""
+    For example, prefixes=['app-', ''] would recognize both 'app-1' and '1'
+    as ticket IDs. By default, prefixes=[''].
+    """
     if prefixes is None:
-        prefixes = [""]
+        prefixes = ['']
     ids = set()
     safe_prefixes = [re.escape(prefix) for prefix in prefixes]
-    ticket_id = "#?((?:" + "|".join(safe_prefixes) + r")\d+)"
+    ticket_id = '#?((?:' + '|'.join(safe_prefixes) + r')\d+)'
     matches = re.findall(TICKET_TRIGGER + ticket_id +
-                         ("(?:" + TICKET_JOIN + ticket_id + ")?") * 10, text,
+                         ('(?:' + TICKET_JOIN + ticket_id + ')?') * 10, text,
                          flags=re.IGNORECASE)
     for match in matches:
         for submatch in match:

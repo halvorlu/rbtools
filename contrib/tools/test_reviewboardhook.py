@@ -14,9 +14,9 @@ TEST_USER = "testuser"
 TEST_PASS = "password"
 TEST_REPO_NAME = "unittestrepo"
 HOOK_PATH = os.getcwd()
-TEST_REPO_PATH = HOOK_PATH + "/" + TEST_REPO_NAME
+TEST_REPO_PATH = HOOK_PATH + "/ramdisk/" + TEST_REPO_NAME
 CLIENT_REPO_NAME = "clientrepo"
-CLIENT_REPO_PATH = HOOK_PATH + "/" + CLIENT_REPO_NAME
+CLIENT_REPO_PATH = HOOK_PATH + "/ramdisk/" + CLIENT_REPO_NAME
 
 
 def extcmd(command, cwd=None):
@@ -55,34 +55,218 @@ def write_to_file(filename, text):
         fileobj.write(text)
 
 
-class FakeRBClient(object):
+class Resource(object):
+    def __contains__(self, key):
+        return key in self._fields
+
+    def __getattr__(self, name):
+        if name in self._fields:
+            return self._fields[name]
+        else:
+            raise AttributeError
+
+    def get_self(self):
+        return self
+
+class ListResource(Resource):
+    def num_items(self):
+        return len(self._list)
+
+    def __getitem__(self, key):
+        return self._list[key]
+
+    def __len__(self):
+        return len(self._list)
+
+
+class FakeRBClient(Resource):
+    _root = None
     def __init__(self, url, username=None, password=None, api_token=None):
-        pass
+        if FakeRBClient._root is None:
+            FakeRBClient._root = FakeRoot(capabilities=None, username='testuser')
+        FakeRBClient._root.update_user(username)
 
     def get_root(self):
-        return FakeRoot(capabilities=None)
+        return FakeRBClient._root
 
 
-class FakeRoot(object):
-    def __init__(self, capabilities):
-        self.capabilities = capabilities
-        self.users = {}
+class FakeRoot(Resource):
+    def __init__(self, capabilities, username):
+        self._fields = {'capabilities': capabilities}
+        self._repo_list = FakeRepoList(self)
+        self._revreq_list = FakeRevReqList(self)
+        self.users = {'testuser': FakeUser('testuser'),
+                      'admin': FakeUser('admin')}
+        self.update_user(username)
+
+    def update_user(self, username):
+        self.user = self.users[username]
 
     def get_repositories(self, **kwargs):
-        return []
+        return self._repo_list
+
+    def get_review_requests(self, **kwargs):
+        for revreq in self._revreq_list:
+            if 'id' in kwargs and revreq.id == kwargs['id']:
+                return [revreq]
+            elif 'commit_id' in kwargs and\
+                 revreq.commit_id == kwargs['commit_id']:
+                return [revreq]
+        return self._revreq_list
 
     def get_users(self, q, **kwargs):
         return self.users[q]
 
 
-class FakeRepoList(object):
-    def __init__(self):
-        self.num_items = 0
+class FakeUser(Resource):
+    next_id = 0
+    def __init__(self, username):
+        self._fields = {'id': FakeUser.next_id,
+                        'username': username}
+        FakeUser.next_id += 1
 
-class FakeRepo(object):
-    def __init__(self):
-        pass
 
+class FakeRepoList(ListResource):
+    def __init__(self, root):
+        self.root = root
+        self._fields = {'num_items': 0}
+        self._list = [FakeRepo(root)]
+
+class FakeRepo(Resource):
+    def __init__(self, root):
+        self.root = root
+        self._fields = {'id': 0}
+
+class FakeRevReqList(ListResource):
+    def __init__(self, root):
+        self.root = root
+        self._fields = {}
+        self._list = []
+        self.next_id = 0
+
+    def create(self, commit_id=None, repository=None, submit_as=None):
+        if submit_as is None:
+            user = self.root.user
+        else:
+            user = self.root.get_users(submit_as)
+        print "Creating revreq id", self.next_id
+        revreq = FakeRevReq(self.next_id, commit_id, user, self)
+        self.next_id += 1
+        self._list.append(revreq)
+        return revreq
+
+    def delete(self, revreq):
+        self._list.remove(revreq)
+
+class FakeRevReq(Resource):
+    def __init__(self, id, commit_id, user, parent):
+        self._fields = {'id': id,
+                        'commit_id': commit_id,
+                        'user': user,
+                        'absolute_url': 'http://%d' % id,
+                        'description': '',
+                        'summary': '',
+                        'extra_data': {},
+                        'approved': False,
+                        'status': 'pending'}
+        self._draft = None
+        self._parent = parent
+        self.root = parent.root
+        self._reviews = FakeReviewList(self.root)
+
+    def get_submitter(self, **kwargs):
+        return self.user
+
+    def get_diffs(self, **kwargs):
+        return FakeDiffList()
+
+    def update(self, **kwargs):
+        for key, value in kwargs.iteritems():
+            keyparts = key.split('.')
+            if keyparts[0] == 'extra_data':
+                self._fields['extra_data'][keyparts[1]] = value
+
+    def get_or_create_draft(self, **kwargs):
+        if self._draft is None:
+            self._draft = FakeRevReqDraft(self)
+        return self._draft
+
+    def get_draft(self, **kwargs):
+        return self._draft
+
+    def publish_draft(self):
+        for key, value in self._draft._fields.iteritems():
+            self._fields[key] = value
+        self._draft = None
+
+    def get_reviews(self, **kwargs):
+        return self._reviews
+
+    def delete(self):
+        self._parent.delete(self)
+
+    def approved(self):
+        for review in self._reviews:
+            if review.ship_it:
+                return True
+
+class FakeRevReqDraft(Resource):
+    def __init__(self, revreq):
+        self._revreq = revreq
+        self._fields = {}
+
+    def update(self, **kwargs):
+        for key, value in kwargs.iteritems():
+            if key != "publish":
+                self._fields[key] = value
+        if "public" in kwargs and kwargs['public']:
+            self._revreq.publish_draft()
+
+class FakeDiffList(ListResource):
+    def __init__(self):
+        self._fields = {}
+        self._list = [FakeDiff()]
+
+    def upload_diff(self, *args, **kwargs):
+        self._list[0].update_timestamp()
+
+from datetime import datetime
+class FakeDiff(Resource):
+    def __init__(self):
+        self._fields = {}
+        self.update_timestamp()
+
+    def update_timestamp(self):
+        timestamp = datetime.now().strftime('%Y-%m-%dT%H:%M:%SZ')
+        self._fields = {'timestamp': timestamp}
+
+
+class FakeReviewList(ListResource):
+    def __init__(self, root):
+        self.root = root
+        self._fields = {}
+        self._list = []
+        self.next_id = 0
+
+    def create(self):
+        self._list.append(FakeReview(self.root.user))
+        return self._list[-1]
+
+class FakeReview(Resource):
+    def __init__(self, user):
+        self._fields = {'ship_it': False, 'public': False,
+                        'body_top': "",
+                        'user': user}
+
+    def update(self, ship_it=False, public=False, body_top=""):
+        self._fields['ship_it'] = ship_it
+        self._fields['public'] = public
+        self._fields['body_top'] = body_top
+        timestamp = datetime.now().strftime('%Y-%m-%dT%H:%M:%SZ')
+        self._fields['timestamp'] = timestamp
+
+    def get_user(self, only_fields=None, only_links=None):
+        return self._fields['user']
 
 def get_root():
     client = RBClient(TEST_SERVER, username=TEST_USER, password=TEST_PASS)
@@ -91,7 +275,7 @@ def get_root():
 
 def get_admin_root():
     client = RBClient(TEST_SERVER, username="admin",
-                      password="admin")
+                          password="admin")
     return client.get_root()
 
 
@@ -151,7 +335,7 @@ def test_hgdiff():
     hexid = extcmd("hg id -i").strip()
     diff = differ.diff(hexid+"^1", hexid)
     assert len(diff['diff']) > 0
-    write_to_file("diff", diff['diff'].encode('utf-8'))
+    write_to_file("diff", diff['diff'])
     extcmd("hg up tip^1")
     extcmd("hg import diff -m applydiff")
     hexid2 = extcmd("hg id -i").strip()
@@ -248,10 +432,10 @@ def test_hook_base():
     os.chdir(TEST_REPO_PATH)
     write_to_file("tmp6.txt", "høæå")
     extcmd("hg add tmp6.txt")
-    extcmd("hg commit -m tmp6")
+    extcmd("hg commit -m tmp6 -u user1")
     write_to_file("tmp7.txt", "høæå")
     extcmd("hg add tmp7.txt")
-    extcmd("hg commit -m tmp7")
+    extcmd("hg commit -m tmp7 -u user2")
     repo = hg.repository(ui.ui(), '.')
     firsthex = rbh.shorthex(repo['-2'].hex())
     rbrepo = get_repo_id(root)
@@ -331,7 +515,7 @@ def test_push_review_hook_base_merge():
 
 
 def test_allow_merge():
-    """Test that hook allows merges when TEST_SERVER, TEST_USER says so."""
+    """Test that hook allows merges when config says so."""
     os.chdir(TEST_REPO_PATH)
     write_to_file("tmp13.txt", "hæææ")
     extcmd("hg add tmp13.txt")
@@ -356,10 +540,11 @@ def test_allow_merge():
     rbh.configbool = configbooltrue
     extcmd("hg merge {0}".format(firsthex))
     extcmd("hg commit -m merge")
+    thirdhex = extcmd("hg id -i").strip()
     assert push_review_hook_base(root, rbrepo, secondhex,
                                  TEST_SERVER, TEST_USER) == rbh.HOOK_SUCCESS
     rbh.configbool = oldconfigbool
-    commit_id = rbh.date_author_hash(secondhex)
+    commit_id = rbh.date_author_hash(thirdhex)
     revreq = root.get_review_requests(commit_id=commit_id,
                                       repository=rbrepo,
                                       status='all')[0]
@@ -459,39 +644,62 @@ def test_rebase():
     rbrepo = get_repo_id(root)
     assert push_review_hook_base(root, rbrepo, firsthex,
                                  TEST_SERVER, TEST_USER) == rbh.HOOK_FAILED
-    write_to_file("tmp21.txt", "blæææ")
-    extcmd("hg commit -m tmp21-2")
-    secondhex = extcmd("hg id -i").strip()
+    # Create new commit one step back (new branch)
     extcmd("hg up -r -2")
-    write_to_file("tmp22.txt", "høøø")
+    write_to_file("tmp22.txt", "blæææ")
     extcmd("hg add tmp22.txt")
-    extcmd("hg commit -m tmp22")
-    thirdhex = extcmd("hg id -i").strip()
-    assert push_review_hook_base(root, rbrepo, thirdhex,
+    extcmd("hg commit -m tmp22-1")
+    secondhex = extcmd("hg id -i").strip()
+    assert push_review_hook_base(root, rbrepo, secondhex,
                                  TEST_SERVER, TEST_USER) == rbh.HOOK_FAILED
     root = get_admin_root()
-    approve_revreq(root, rbrepo, rbh.date_author_hash(thirdhex))
-    root = get_root()
-    extcmd("hg rebase -d {0}".format(secondhex))
-    thirdhex = extcmd("hg id -i").strip()
-    assert push_review_hook_base(root, rbrepo, firsthex,
-                                 TEST_SERVER, TEST_USER) == rbh.HOOK_FAILED
-    assert push_review_hook_base(root, rbrepo, firsthex,
-                                 TEST_SERVER, TEST_USER) == rbh.HOOK_FAILED
-    root = get_admin_root()
+    approve_revreq(root, rbrepo, rbh.date_author_hash(firsthex))
     approve_revreq(root, rbrepo, rbh.date_author_hash(secondhex))
     root = get_root()
+    # Rebase the new branch on top of the original
+    extcmd("hg rebase -d {0}".format(firsthex))
+    secondhex = extcmd("hg id -i").strip()
+    # First push fails since second changeset ID is changed
     assert push_review_hook_base(root, rbrepo, firsthex,
                                  TEST_SERVER, TEST_USER) == rbh.HOOK_SUCCESS
-    revreq1 = root.get_review_requests(commit_id=rbh.date_author_hash(secondhex),
+    revreq1 = root.get_review_requests(commit_id=rbh.date_author_hash(firsthex),
                                        repository=rbrepo,
                                        status='all')[0]
     assert "tmp21-1" in revreq1.description
-    assert "tmp21-2" in revreq1.description
-    revreq2 = root.get_review_requests(commit_id=rbh.date_author_hash(thirdhex),
+    assert revreq1.status == 'submitted'
+    revreq2 = root.get_review_requests(commit_id=rbh.date_author_hash(secondhex),
                                        repository=rbrepo,
                                        status='all')[0]
-    assert "tmp22" in revreq2.description
+    assert "tmp22-1" in revreq2.description
+    assert revreq2.status == 'submitted'
+
+
+def test_rebase_accepted():
+    """Test that hook stops accepted changesets rebased onto others."""
+    os.chdir(TEST_REPO_PATH)
+    write_to_file("tmp40.txt", "hæææ")
+    extcmd("hg add tmp40.txt")
+    extcmd("hg commit -m tmp40")
+    firsthex = extcmd("hg id -i").strip()
+    root = get_root()
+    rbrepo = get_repo_id(root)
+    assert push_review_hook_base(root, rbrepo, firsthex,
+                                 TEST_SERVER, TEST_USER) == rbh.HOOK_FAILED
+    root = get_admin_root()
+    approve_revreq(root, rbrepo, rbh.date_author_hash(firsthex))
+    root = get_root()
+    # Create new commit one step back (new branch)
+    extcmd("hg up -r -2")
+    write_to_file("tmp41.txt", "blæææ")
+    extcmd("hg add tmp41.txt")
+    extcmd("hg commit -m tmp41")
+    secondhex = extcmd("hg id -i").strip()
+    # Rebase first onto the second
+    extcmd("hg rebase -s {0} -d {1}".format(firsthex, secondhex))
+    assert push_review_hook_base(root, rbrepo, secondhex,
+                                 TEST_SERVER, TEST_USER) == rbh.HOOK_FAILED
+    assert push_review_hook_base(root, rbrepo, secondhex,
+                                 TEST_SERVER, TEST_USER) == rbh.HOOK_FAILED
 
 
 def test_hook_base_nopublish():
