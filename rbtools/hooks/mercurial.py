@@ -406,14 +406,14 @@ def get_root(config):
     return root
 
 
-def get_repo(root, path):
-    """Get ID for repository with given file path."""
-    repos = root.get_repositories(path=path, only_fields='id',
+def get_repo(root, name):
+    """Get ID for repository with given name."""
+    repos = root.get_repositories(name=name, only_fields='id',
                                   only_links='')
     if repos.num_items < 1:
         raise LoginError('Could not open Review Board repository '
-                         'for path\n%s\n'
+                         'with name\n%s\n'
                          'Do you have the permissions to access this '
                          'repository?\nAsk the administrator '
-                         'to get permissions.' % path)
+                         'to get permissions.' % name)
     return repos[0].id

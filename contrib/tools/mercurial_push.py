@@ -59,7 +59,7 @@ ticket_url:
 The URL for the issue/bug/ticket tracker. Any references to issues/bugs/tickets
 in the commit messages are linked to this URL as <ticket_url><ticket_id>
 
-ticket_prefixes:
+ticket_id_prefixes:
 Comma-separated list of prefixes that are allowed in ticket IDs.
 Example: 'ticket-prefixes = app-, prog-' will cause both 'fixes app-1',
 'fixes prog-2' and 'fixes 3' to be recognized as references to tickets.
@@ -92,11 +92,14 @@ CONFIG_SECTION = 'reviewboardhook'
 def push_review_hook(node):
     """Run the hook. node is the hex of the first changeset."""
     config = load_config()
-    repo_root = hghook.extcmd(['hg', 'root']).strip()
+    if 'REPOSITORY' not in config:
+        LOGGER.error('You need to specify REPOSITORY in the '
+                     "repository's .reviewboardrc file.")
+        return hghook.HOOK_FAILED
 
     try:
         root = hghook.get_root(config)
-        rbrepo = hghook.get_repo(root, repo_root)
+        rbrepo = hghook.get_repo(root, config['REPOSITORY'])
     except hghook.LoginError as error:
         for line in six.text_type(error).split('\n'):
             LOGGER.error(line)
@@ -106,8 +109,8 @@ def push_review_hook(node):
         LOGGER.error('You need to specify REVIEWBOARD_URL in the '
                      "repository's .reviewboardrc file.")
         return hghook.HOOK_FAILED
-    else:
-        url = config['REVIEWBOARD_URL']
+
+    url = config['REVIEWBOARD_URL']
 
     return push_review_hook_base(root, rbrepo, node, url,
                                  submitter=getpass.getuser())
