@@ -135,8 +135,8 @@ def linkify_ticket_refs(text, base_url, prefixes=None):
     def replace_num_with_link(matchobj):
         """Replace all numbers with links."""
         substr = text[matchobj.start():matchobj.end()]
-        substr = re.sub(ticket_id,
-                        r'[\1](%s\2)' % re.escape(base_url), substr)
+        escape_url = base_url.replace('\\', '\\\\')
+        substr = re.sub(ticket_id, r'[\1](%s\2)' % escape_url, substr)
         return substr
 
     text = re.sub(TICKET_TRIGGER + ticket_id +
@@ -161,8 +161,5 @@ def find_ticket_refs(text, prefixes=None):
     matches = re.findall(TICKET_TRIGGER + ticket_id +
                          ('(?:' + TICKET_JOIN + ticket_id + ')?') * 10, text,
                          flags=re.IGNORECASE)
-    for match in matches:
-        for submatch in match:
-            if submatch != '':
-                ids.add(submatch)
+    ids = [submatch for match in matches for submatch in match if submatch]
     return sorted(list(ids))

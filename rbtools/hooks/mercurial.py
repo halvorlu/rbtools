@@ -117,7 +117,8 @@ def update_draft(root, ticket_url, ticket_prefixes,
     update_diff(root, changesets, revreq, parent)
 
     string_refs = [six.text_type(x)
-                   for x in find_ticket_refs(new_plain_description)]
+                   for x in find_ticket_refs(new_plain_description,
+                                             ticket_prefixes)]
     bugs_closed = ','.join(string_refs)
     commit_id = date_author_hash(changesets[-1])
     extra_data = {'extra_data.real_commit_id': changesets[-1]}
@@ -406,7 +407,7 @@ def get_root(config):
     return root
 
 
-def get_repo(root, name):
+def get_repo_id(root, name):
     """Get ID for repository with given name."""
     repos = root.get_repositories(name=name, only_fields='id',
                                   only_links='')

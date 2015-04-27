@@ -99,7 +99,7 @@ def push_review_hook(node):
 
     try:
         root = hghook.get_root(config)
-        rbrepo = hghook.get_repo(root, config['REPOSITORY'])
+        rbrepo_id = hghook.get_repo_id(root, config['REPOSITORY'])
     except hghook.LoginError as error:
         for line in six.text_type(error).split('\n'):
             LOGGER.error(line)
@@ -112,7 +112,7 @@ def push_review_hook(node):
 
     url = config['REVIEWBOARD_URL']
 
-    return push_review_hook_base(root, rbrepo, node, url,
+    return push_review_hook_base(root, rbrepo_id, node, url,
                                  submitter=getpass.getuser())
 
 
@@ -143,8 +143,8 @@ def get_ticket_prefixes():
         return prefixes
 
 
-def push_review_hook_base(root, rbrepo, node, url, submitter):
-    """Run the hook with given API root, Review Board repo and changeset.
+def push_review_hook_base(root, rbrepo_id, node, url, submitter):
+    """Run the hook with given API root, Review Board repo ID and changeset.
 
     node is the commit ID of the first changeset in the push.
     url is the Review Board server URL.
@@ -155,7 +155,8 @@ def push_review_hook_base(root, rbrepo, node, url, submitter):
     changesets = hghook.list_of_incoming(node)
     parent = node + '^1'
     LOGGER.info('%d changesets received.', len(changesets))
-    revreqs, indices = hghook.find_review_requests(root, rbrepo, changesets)
+    revreqs, indices = hghook.find_review_requests(root, rbrepo_id,
+                                                   changesets)
     LOGGER.info('%d matching review request found.', len(revreqs))
 
     prev_index = 0
@@ -179,7 +180,7 @@ def push_review_hook_base(root, rbrepo, node, url, submitter):
     if last_approved and len(new_changesets) > 0 and\
        not is_approved(new_changesets):
         LOGGER.info('Creating review request for new changesets.')
-        revreq = create(root, rbrepo, submitter, url, new_changesets[-1])
+        revreq = create(root, rbrepo_id, submitter, url, new_changesets[-1])
         update_and_publish(root, ticket_url, ticket_prefixes,
                            new_changesets, revreq, parent)
         approvals.append(False)
@@ -264,7 +265,7 @@ def is_approved(changesets):
     return False
 
 
-def create(root, rbrepoid, submitter, url, changeset):
+def create(root, rbrepo_id, submitter, url, changeset):
     """Return a new review request for the given changesets."""
     review_requests = root.get_review_requests(only_fields='',
                                                only_links='create')
@@ -272,7 +273,7 @@ def create(root, rbrepoid, submitter, url, changeset):
 
     try:
         revreq = review_requests.create(commit_id=commit_id,
-                                        repository=rbrepoid,
+                                        repository=rbrepo_id,
                                         submit_as=submitter)
     except APIError as api_error:
         if api_error.error_code == 208:

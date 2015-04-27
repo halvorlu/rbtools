@@ -371,10 +371,10 @@ def test_get_repo():
     """Test that get_repo returns existing repos."""
     root = get_root()
     os.chdir(CLIENT_REPO_PATH)
-    repo_id = rbh.get_repo(root, TEST_REPO_PATH)
+    repo_id = rbh.get_repo_id(root, TEST_REPO_NAME)
     assert repo_id >= 0
     try:
-        repo_id2 = rbh.get_repo(root, "nonexistingrepo")
+        repo_id2 = rbh.get_repo_id(root, "nonexistingrepo")
         assert False
     except:
         pass
