@@ -443,21 +443,21 @@ class MercurialClient(SCMClient):
 
         for filename in added_empty_files:
             if filename not in exclude_files:
-                diff += ('diff -r %s -r %s %s\n'
-                         '--- %s\t%s\n'
-                         '+++ b/%s\t%s\n'
-                         % (base, tip, filename,
-                            self.PRE_CREATION, self.PRE_CREATION_DATE,
-                            filename, tip_date))
+                diff += str('diff -r %s -r %s %s\n'
+                            '--- %s\t%s\n'
+                            '+++ b/%s\t%s\n'
+                            % (base, tip, filename,
+                               self.PRE_CREATION, self.PRE_CREATION_DATE,
+                               filename, tip_date))
 
         for filename in deleted_empty_files:
             if filename not in exclude_files:
-                diff += ('diff -r %s -r %s %s\n'
-                         '--- a/%s\t%s\n'
-                         '+++ %s\t%s\n'
-                         % (base, tip, filename,
-                            filename, base_date,
-                            self.PRE_CREATION, self.PRE_CREATION_DATE))
+                diff += str('diff -r %s -r %s %s\n'
+                            '--- a/%s\t%s\n'
+                            '+++ %s\t%s\n'
+                            % (base, tip, filename,
+                               filename, base_date,
+                               self.PRE_CREATION, self.PRE_CREATION_DATE))
 
         return diff
 
