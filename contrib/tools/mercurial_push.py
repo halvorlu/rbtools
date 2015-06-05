@@ -228,7 +228,7 @@ def publish_maybe(revreq):
     if publish_draft:
         revreq = revreq.get_self()  # Update request to get draft
         try:
-            draft = revreq.get_draft(only_links='update',
+            draft = revreq.get_draft(only_links='update,delete',
                                      only_fields='')
         except APIError as api_error:
             # Error code 100 means draft does not exist,
@@ -239,7 +239,9 @@ def publish_maybe(revreq):
             draft.update(public=True)
         except APIError as api_error:
             # Error code 211 means draft does not have changes
-            if api_error.error_code != 211:
+            if api_error.error_code == 211:
+                draft.delete()
+            else:
                 raise
     else:
         LOGGER.info('The review request has not been published yet.')
