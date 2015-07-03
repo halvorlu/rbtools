@@ -188,13 +188,6 @@ class Command(object):
                    config_key='REVIEWBOARD_URL',
                    default=None,
                    help='Specifies the Review Board server to use.'),
-            Option('--disable-proxy',
-                   action='store_false',
-                   dest='enable_proxy',
-                   config_key='ENABLE_PROXY',
-                   default=True,
-                   help='Prevents requests from going through a proxy '
-                        'server.'),
             Option('--username',
                    dest='username',
                    metavar='USERNAME',
@@ -217,6 +210,53 @@ class Command(object):
                    help='The API token to use for authentication, instead of '
                         'using a username and password.',
                    added_in='0.7'),
+            Option('--disable-proxy',
+                   action='store_false',
+                   dest='enable_proxy',
+                   config_key='ENABLE_PROXY',
+                   default=True,
+                   help='Prevents requests from going through a proxy '
+                        'server.'),
+            Option('--disable-ssl-verification',
+                   action='store_true',
+                   dest='disable_ssl_verification',
+                   config_key='DISABLE_SSL_VERIFICATION',
+                   default=False,
+                   help='Disable SSL certificate verification. This is useful '
+                        'with servers that have self-signed certificates.',
+                   added_in='0.7.3'),
+            Option('--disable-cookie-storage',
+                   config_key='SAVE_COOKIES',
+                   dest='save_cookies',
+                   action='store_false',
+                   default=True,
+                   help='Use an in-memory cookie store instead of writing '
+                        'them to a file. No credentials will be saved or '
+                        'loaded.',
+                   added_in='0.7.3'),
+            Option('--disable-cache',
+                   dest='disable_cache',
+                   config_key='DISABLE_CACHE',
+                   action='store_true',
+                   default=False,
+                   help='Disable the HTTP cache completely. This will '
+                        'result in slower requests.',
+                   added_in='0.7.3'),
+            Option('--disable-cache-storage',
+                   dest='in_memory_cache',
+                   config_key='IN_MEMORY_CACHE',
+                   action='store_true',
+                   default=False,
+                   help='Disable storing the API cache on the filesystem, '
+                        'instead keeping it in memory temporarily.',
+                   added_in='0.7.3'),
+            Option('--cache-location',
+                   dest='cache_location',
+                   metavar='FILE',
+                   config_key='CACHE_LOCATION',
+                   default=None,
+                   help='The file to use for the API cache database.',
+                   added_in='0.7.3'),
         ]
     )
 
@@ -469,6 +509,15 @@ class Command(object):
 
         return parser
 
+    def post_process_options(self):
+        if self.options.disable_ssl_verification:
+            try:
+                import ssl
+                ssl._create_unverified_context()
+            except:
+                raise CommandError('The --disable-ssl-verification flag is '
+                                   'only available with Python 2.7.9+')
+
     def usage(self):
         """Return a usage string for the command."""
         usage = '%%(prog)s %s [options] %s' % (self.name, self.args)
@@ -686,13 +735,19 @@ class Command(object):
         The RBClient will be instantiated with the proper arguments
         for talking to the provided Review Board server url.
         """
-        return RBClient(server_url,
-                        username=self.options.username,
-                        password=self.options.password,
-                        api_token=self.options.api_token,
-                        auth_callback=self.credentials_prompt,
-                        otp_token_callback=self.otp_token_prompt,
-                        disable_proxy=not self.options.enable_proxy)
+        return RBClient(
+            server_url,
+            username=self.options.username,
+            password=self.options.password,
+            api_token=self.options.api_token,
+            auth_callback=self.credentials_prompt,
+            otp_token_callback=self.otp_token_prompt,
+            disable_proxy=not self.options.enable_proxy,
+            verify_ssl=not self.options.disable_ssl_verification,
+            allow_caching=not self.options.disable_cache,
+            cache_location=self.options.cache_location,
+            in_memory_cache=self.options.in_memory_cache,
+            save_cookies=self.options.save_cookies)
 
     def get_api(self, server_url):
         """Returns an RBClient instance and the associated root resource.
@@ -709,7 +764,7 @@ class Command(object):
             api_root = api_client.get_root()
         except ServerInterfaceError as e:
             raise CommandError('Could not reach the Review Board '
-                               'server at %s' % server_url)
+                               'server at %s: %s' % (server_url, e))
         except APIError as e:
             raise CommandError('Unexpected API Error: %s' % e)
 

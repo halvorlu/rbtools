@@ -40,6 +40,30 @@ class GitClient(SCMClient):
 
         self._original_cwd = None
 
+    def _supports_git_config_flag(self):
+        """Return if the installed version of git supports the -c flag.
+
+        This will execute ``git --version`` on the first call and cache the
+        result.
+        """
+        if not hasattr(self, '_git_version_at_least_180'):
+            self._git_version_least_180 = False
+
+            version_str = execute([self.git, 'version'], ignore_errors=True,
+                                  none_on_ignored_error=True)
+
+            if version_str:
+                m = re.search('(\d+)\.(\d+)\.(\d+)', version_str)
+
+                if m:
+                    git_version = (int(m.group(1)),
+                                   int(m.group(2)),
+                                   int(m.group(3)))
+
+                    self._git_version_at_least_180 = git_version >= (1, 8, 0)
+
+        return self._git_version_at_least_180
+
     def parse_revision_spec(self, revisions=[]):
         """Parses the given revision spec.
 
@@ -475,14 +499,19 @@ class GitClient(SCMClient):
         if include_files:
             include_files = ['--'] + include_files
 
-        git_cmd = [self.git, '-c', 'core.quotepath=false']
+        git_cmd = [self.git]
+
+        if self._supports_git_config_flag():
+            git_cmd.extend(['-c', 'core.quotepath=false'])
 
         if self.type in ('svn', 'perforce'):
             diff_cmd_params = ['--no-color', '--no-prefix', '-r', '-u']
         elif self.type == 'git':
             diff_cmd_params = ['--no-color', '--full-index',
                                '--ignore-submodules']
-            git_cmd.extend(['-c', 'diff.noprefix=false'])
+
+            if self._supports_git_config_flag():
+                git_cmd.extend(['-c', 'diff.noprefix=false'])
 
             if (self.capabilities is not None and
                 self.capabilities.has_capability('diffs', 'moved_files')):
@@ -573,50 +602,49 @@ class GitClient(SCMClient):
         if not rev:
             return None
 
-        diff_data = ""
-        original_file = ""
-        filename = ""
+        diff_data = b''
+        original_file = b''
+        filename = b''
         newfile = False
 
         for i, line in enumerate(diff_lines):
-            if line.startswith("diff "):
+            if line.startswith(b'diff '):
                 # Grab the filename and then filter this out.
                 # This will be in the format of:
                 #
                 # diff --git a/path/to/file b/path/to/file
-                info = line.split(" ")
-                diff_data += "Index: %s\n" % info[2]
-                diff_data += "=" * 67
-                diff_data += "\n"
-            elif line.startswith("index "):
+                info = line.split(b' ')
+                diff_data += b'Index: %s\n' % info[2]
+                diff_data += b'=' * 67
+                diff_data += b'\n'
+            elif line.startswith(b'index '):
                 # Filter this out.
                 pass
-            elif line.strip() == "--- /dev/null":
+            elif line.strip() == b'--- /dev/null':
                 # New file
                 newfile = True
-            elif (line.startswith("--- ") and i + 1 < len(diff_lines) and
-                  diff_lines[i + 1].startswith('+++ ')):
+            elif (line.startswith(b'--- ') and i + 1 < len(diff_lines) and
+                  diff_lines[i + 1].startswith(b'+++ ')):
                 newfile = False
                 original_file = line[4:].strip()
-                diff_data += "--- %s\t(revision %s)\n" % \
-                             (original_file, rev)
-            elif line.startswith("+++ "):
+                diff_data += b'--- %s\t(revision %s)\n' % (original_file, rev)
+            elif line.startswith(b'+++ '):
                 filename = line[4:].strip()
                 if newfile:
-                    diff_data += "--- %s\t(revision 0)\n" % filename
-                    diff_data += "+++ %s\t(revision 0)\n" % filename
+                    diff_data += b'--- %s\t(revision 0)\n' % filename
+                    diff_data += b'+++ %s\t(revision 0)\n' % filename
                 else:
                     # We already printed the "--- " line.
-                    diff_data += "+++ %s\t(working copy)\n" % original_file
-            elif (line.startswith("new file mode") or
-                  line.startswith("deleted file mode")):
+                    diff_data += b'+++ %s\t(working copy)\n' % original_file
+            elif (line.startswith(b'new file mode') or
+                  line.startswith(b'deleted file mode')):
                 # Filter this out.
                 pass
-            elif line.startswith("Binary files "):
+            elif line.startswith(b'Binary files '):
                 # Add the following so that we know binary files were
                 # added/changed.
-                diff_data += "Cannot display: file marked as a binary type.\n"
-                diff_data += "svn:mime-type = application/octet-stream\n"
+                diff_data += b'Cannot display: file marked as a binary type.\n'
+                diff_data += b'svn:mime-type = application/octet-stream\n'
             else:
                 diff_data += line
 
@@ -624,15 +652,15 @@ class GitClient(SCMClient):
 
     def make_perforce_diff(self, merge_base, diff_lines):
         """Format the output of git diff to look more like perforce's."""
-        diff_data = ''
-        filename = ''
-        p4rev = ''
+        diff_data = b''
+        filename = b''
+        p4rev = b''
 
         # Find which depot changelist we're based on
         log = execute([self.git, 'log', merge_base], ignore_errors=True)
 
         for line in log:
-            m = re.search(r'[rd]epo.-paths = "(.+)": change = (\d+).*\]',
+            m = re.search(br'[rd]epo.-paths = "(.+)": change = (\d+).*\]',
                           log, re.M)
 
             if m:
@@ -644,35 +672,35 @@ class GitClient(SCMClient):
                 pass
 
         for i, line in enumerate(diff_lines):
-            if line.startswith('diff '):
+            if line.startswith(b'diff '):
                 # Grab the filename and then filter this out.
                 # This will be in the format of:
                 #    diff --git a/path/to/file b/path/to/file
-                filename = line.split(' ')[2].strip()
-            elif (line.startswith('index ') or
-                  line.startswith('new file mode ')):
+                filename = line.split(b' ')[2].strip()
+            elif (line.startswith(b'index ') or
+                  line.startswith(b'new file mode ')):
                 # Filter this out
                 pass
-            elif (line.startswith('--- ') and i + 1 < len(diff_lines) and
-                  diff_lines[i + 1].startswith('+++ ')):
+            elif (line.startswith(b'--- ') and i + 1 < len(diff_lines) and
+                  diff_lines[i + 1].startswith(b'+++ ')):
                 data = execute(
                     ['p4', 'files', base_path + filename + '@' + p4rev],
-                    ignore_errors=True)
-                m = re.search(r'^%s%s#(\d+).*$' % (re.escape(base_path),
-                                                   re.escape(filename)),
+                    ignore_errors=True, results_unicode=False)
+                m = re.search(br'^%s%s#(\d+).*$' % (re.escape(base_path),
+                                                    re.escape(filename)),
                               data, re.M)
                 if m:
-                    fileVersion = m.group(1).strip()
+                    file_version = m.group(1).strip()
                 else:
-                    fileVersion = 1
+                    file_version = 1
 
-                diff_data += '--- %s%s\t%s%s#%s\n' % (base_path, filename,
-                                                      base_path, filename,
-                                                      fileVersion)
-            elif line.startswith('+++ '):
+                diff_data += b'--- %s%s\t%s%s#%s\n' % (base_path, filename,
+                                                       base_path, filename,
+                                                       file_version)
+            elif line.startswith(b'+++ '):
                 # TODO: add a real timestamp
-                diff_data += '+++ %s%s\t%s\n' % (base_path, filename,
-                                                 'TIMESTAMP')
+                diff_data += b'+++ %s%s\t%s\n' % (base_path, filename,
+                                                  b'TIMESTAMP')
             else:
                 diff_data += line
 
