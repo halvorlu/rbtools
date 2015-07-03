@@ -70,6 +70,9 @@ True/1 if merges should be approved automatically, False/0 if not (default).
 publish:
 True/1 if review request drafts should be published by the hook (default).
 
+one_review_per_changeset:
+True/1 if each changeset should have its own review request (default False)
+
 To enable the hook, add the following line in the [hooks] section:
 pretxnchangegroup.rb = /path/to/hook/mercurial_push.py
 """
@@ -112,8 +115,16 @@ def push_review_hook(node):
 
     url = config['REVIEWBOARD_URL']
 
-    return push_review_hook_base(root, rbrepo_id, node, url,
-                                 submitter=getpass.getuser())
+    per_changeset = hghook.configbool(CONFIG_SECTION,
+                                      'one_review_per_changeset',
+                                      default=False)
+
+    if per_changeset:
+        return push_review_hook_single(root, rbrepo_id, node, url,
+                                       submitter=getpass.getuser())
+    else:
+        return push_review_hook_base(root, rbrepo_id, node, url,
+                                     submitter=getpass.getuser())
 
 
 def get_ticket_url():
@@ -143,6 +154,75 @@ def get_ticket_prefixes():
         return prefixes
 
 
+def push_review_hook_single(root, rbrepo_id, node, url, submitter):
+    """Run the hook with given API root, Review Board repo and changeset.
+
+    Each commit is given a separate review request.
+
+    node is the commit ID of the first changeset in the push.
+    url is the Review Board server URL.
+    submitter is the user name of the user that is submitting.
+    """
+    ticket_url = get_ticket_url()
+    ticket_prefixes = get_ticket_prefixes()
+    changesets = hghook.list_of_incoming(node)
+    parent = node + '^1'
+    LOGGER.info('%d changesets received.', len(changesets))
+
+    approvals = []
+    revreqs = []
+    for changeset in changesets:
+        try:
+            revreq = hghook.find_review_request(root, rbrepo_id, changeset)
+            diff_hash = hghook.calc_diff_hash(
+                hghook.calculate_diff(root, [changeset], None)['diff'])
+            branch = hghook.extcmd(['hg', 'id', '--branch',
+                                    '-r', changeset]).strip()
+
+            if (revreq.branch == branch and 'diff_hash' in revreq.extra_data
+                and diff_hash == revreq.extra_data['diff_hash']):
+                if hghook.approved_by_others(revreq):
+                    LOGGER.info('Found approved review request (%d) '
+                                'for changeset: %s', revreq.id, changeset)
+                    approvals.append(True)
+                    revreqs.append(revreq)
+                else:
+                    LOGGER.info('Found unchanged review request (%d) '
+                                'for changeset: %s', revreq.id, changeset)
+                    approvals.append(False)
+            else:
+                LOGGER.info('Updating review request (%d) for changeset: %s',
+                            revreq.id, changeset)
+                update_and_publish(root, ticket_url, ticket_prefixes,
+                                   [changeset], revreq, parent)
+                approvals.append(False)
+
+        except hghook.NotFoundError:
+            if is_approved([changeset]):
+                approvals.append(True)
+            else:
+                revreq = create(root, rbrepo_id, submitter, url, changeset)
+                LOGGER.info('Creating review request (%d) for '
+                            'new changeset: %s', revreq.id, changeset)
+                update_and_publish(root, ticket_url, ticket_prefixes,
+                                   [changeset], revreq, parent)
+                approvals.append(False)
+
+    if all(approvals):
+        for revreq in revreqs:
+            LOGGER.info('Closing review request: ' + revreq.absolute_url)
+            hghook.close_request(revreq)
+        return hghook.HOOK_SUCCESS
+    elif any(approvals):
+        last_approved = approvals.index(False) - 1
+        if last_approved > -1:
+            LOGGER.info('If you want to push the already approved changes,')
+            LOGGER.info('you can (probably) do this by executing')
+            LOGGER.info('hg push -r %s', changesets[last_approved])
+
+    return hghook.HOOK_FAILED
+
+
 def push_review_hook_base(root, rbrepo_id, node, url, submitter):
     """Run the hook with given API root, Review Board repo ID and changeset.
 
@@ -155,6 +235,7 @@ def push_review_hook_base(root, rbrepo_id, node, url, submitter):
     changesets = hghook.list_of_incoming(node)
     parent = node + '^1'
     LOGGER.info('%d changesets received.', len(changesets))
+
     revreqs, indices = hghook.find_review_requests(root, rbrepo_id,
                                                    changesets)
     LOGGER.info('%d matching review request found.', len(revreqs))
@@ -177,8 +258,8 @@ def push_review_hook_base(root, rbrepo_id, node, url, submitter):
     else:
         last_approved = True
 
-    if last_approved and len(new_changesets) > 0 and\
-       not is_approved(new_changesets):
+    if (last_approved and len(new_changesets) > 0 and
+        not is_approved(new_changesets)):
         LOGGER.info('Creating review request for new changesets.')
         revreq = create(root, rbrepo_id, submitter, url, new_changesets[-1])
         update_and_publish(root, ticket_url, ticket_prefixes,
@@ -223,7 +304,7 @@ def update_and_publish(root, ticket_url, ticket_prefixes,
 
 def publish_maybe(revreq):
     """Publish the review request's draft if config says so."""
-    publish_draft = hghook.configbool('reviewboardhook', 'publish',
+    publish_draft = hghook.configbool(CONFIG_SECTION, 'publish',
                                       default=True)
     if publish_draft:
         revreq = revreq.get_self()  # Update request to get draft
@@ -257,7 +338,7 @@ def is_approved(changesets):
     if len(changesets) == 0:
         return True
     else:
-        allow_merge = hghook.configbool('reviewboardhook', 'allow_merge',
+        allow_merge = hghook.configbool(CONFIG_SECTION, 'allow_merge',
                                         default=False)
         if allow_merge and all(hghook.is_merge(ctx) for ctx in changesets):
             LOGGER.info('New commits are merges, '

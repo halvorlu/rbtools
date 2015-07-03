@@ -123,7 +123,7 @@ def update_draft(root, ticket_url, ticket_prefixes,
     commit_id = date_author_hash(changesets[-1])
     extra_data = {'extra_data.real_commit_id': changesets[-1]}
     revreq.update(**extra_data)
-    branch = extcmd(['hg', 'branch']).strip()
+    branch = extcmd(['hg', 'id', '--branch', '-r', changesets[0]]).strip()
     draft = revreq.get_or_create_draft(only_links='update', only_fields='')
     draft = draft.update(
         summary=summary,
